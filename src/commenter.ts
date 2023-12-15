@@ -321,7 +321,7 @@ ${COMMENT_TAG}`
         // eslint-disable-next-line camelcase
         review_id: review.data.id,
         event: 'COMMENT',
-        body
+        body: ''
       })
     } catch (e) {
       warning(
