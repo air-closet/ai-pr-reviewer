@@ -206,7 +206,7 @@ ${COMMENT_TAG}`
       })
 
       const pendingReview = reviews.data.find(
-        review => review.state === 'PENDING'
+        (review: any) => review.state === 'PENDING'
       )
 
       if (pendingReview) {
@@ -231,7 +231,7 @@ ${COMMENT_TAG}`
     }
   }
 
-  async submitReview(pullNumber: number, commitId: string, statusMsg: string) {
+  async submitReview(pullNumber: number, commitId: string) {
     if (this.reviewCommentsBuffer.length === 0) {
       // Submit empty review with statusMsg
       info(`Submitting empty review for PR #${pullNumber}`)
@@ -740,7 +740,7 @@ ${chain}
           page
         })
 
-        allCommits.push(...commits.data.map(commit => commit.sha))
+        allCommits.push(...commits.data.map((commit: any) => commit.sha))
         page++
       } while (commits.data.length > 0)
     }

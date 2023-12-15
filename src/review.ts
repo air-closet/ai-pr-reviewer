@@ -737,8 +737,7 @@ ${
     // post the review
     await commenter.submitReview(
       context.payload.pull_request.number,
-      commits[commits.length - 1].sha,
-      statusMsg
+      commits[commits.length - 1].sha
     )
   }
 
