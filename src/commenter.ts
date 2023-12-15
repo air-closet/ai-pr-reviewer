@@ -232,11 +232,6 @@ ${COMMENT_TAG}`
   }
 
   async submitReview(pullNumber: number, commitId: string, statusMsg: string) {
-    const body = `${COMMENT_GREETING}
-
-${statusMsg}
-`
-
     if (this.reviewCommentsBuffer.length === 0) {
       // Submit empty review with statusMsg
       info(`Submitting empty review for PR #${pullNumber}`)
@@ -249,7 +244,7 @@ ${statusMsg}
           // eslint-disable-next-line camelcase
           commit_id: commitId,
           event: 'COMMENT',
-          body
+          body: ''
         })
       } catch (e) {
         warning(`Failed to submit empty review: ${e}`)
