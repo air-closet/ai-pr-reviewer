@@ -64,6 +64,11 @@ export const handleReviewComment = async (
     return
   }
 
+  if (!comment.body.includes(ASK_BOT)) {
+    info(`Skipped: ${context.eventName} event is not asking the bot`)
+    return
+  }
+
   // Check if the comment is not from the bot itself
   if (
     !comment.body.includes(COMMENT_TAG) &&
