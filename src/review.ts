@@ -32,8 +32,8 @@ const SKIP_KEYWORDS = [
   '変更は適切です。',
   '適切な変更です。',
   '確認してください。',
-  'コメントアウト',
-];
+  'コメントアウト'
+]
 
 export const codeReview = async (
   lightBot: Bot,
