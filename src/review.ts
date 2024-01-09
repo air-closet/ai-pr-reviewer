@@ -24,6 +24,17 @@ const repo = context.repo
 
 const ignoreKeyword = '@coderabbitai: ignore'
 
+// レビューに含まれていた場合にスキップする文言のリスト
+const SKIP_KEYWORDS = [
+  'LGTM',
+  'looks good to me',
+  '問題ありません。',
+  '変更は適切です。',
+  '適切な変更です。',
+  '確認してください。',
+  'コメントアウト'
+]
+
 export const codeReview = async (
   lightBot: Bot,
   heavyBot: Bot,
@@ -551,8 +562,8 @@ ${commentChain}
             // check for LGTM
             if (
               !options.reviewCommentLGTM &&
-              (review.comment.includes('LGTM') ||
-                review.comment.includes('looks good to me'))
+              // スキップ対象の文言が含まれていた場合はスキップする
+              SKIP_KEYWORDS.some(keyword => review.comment.includes(keyword))
             ) {
               // lgtmCount += 1
               continue
