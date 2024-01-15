@@ -40,7 +40,7 @@ const SKIP_KEYWORDS = [
   '必要な修正です。',
   '改善です。',
   '不要なインポート'
-];
+]
 
 export const codeReview = async (
   lightBot: Bot,
