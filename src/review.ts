@@ -45,7 +45,7 @@ const SKIP_KEYWORDS = [
   '説明が不足しています。',
   '説明されていません。',
   '説明が必要です。',
-  '機能が強化されます。',
+  '機能が強化されます。'
 ]
 
 export const codeReview = async (
