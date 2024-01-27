@@ -96,29 +96,11 @@ export const codeReview = async (
   inputs.rawSummary = rawSummary
   inputs.shortSummary = shortSummary
 
-  const allCommitIds = await commenter.getAllCommitIds()
-  // find highest reviewed commit id
-  let highestReviewedCommitId = ''
-  if (existingCommitIdsBlock !== '') {
-    highestReviewedCommitId = commenter.getHighestReviewedCommitId(
-      allCommitIds,
-      commenter.getReviewedCommitIds(existingCommitIdsBlock)
-    )
-  }
-
-  if (
-    highestReviewedCommitId === '' ||
-    highestReviewedCommitId === pullRequest.head.sha
-  ) {
-    info(
-      `Will review from the base commit: ${
-        pullRequest.base.sha as string
-      }`
-    )
-    highestReviewedCommitId = pullRequest.base.sha
-  } else {
-    info(`Will review from commit: ${highestReviewedCommitId}`)
-  }
+  const highestReviewedCommitId = await getHighestReviewedCommitId({
+    commenter,
+    existingCommitIdsBlock,
+    pullRequest
+  })
 
   // Fetch the diff between the highest reviewed commit and the latest commit of the PR branch
   const incrementalDiff = await octokit.repos.compareCommits({
@@ -654,6 +636,45 @@ const getPreview = async({
     shortSummary
   }
 }
+
+/**
+ * レビューを開始するコミットIDを取得する
+ */
+const getHighestReviewedCommitId = async ({
+  commenter,
+  existingCommitIdsBlock,
+  pullRequest
+} : {
+  commenter: Commenter;
+  existingCommitIdsBlock: string;
+  pullRequest: IPullRequest;
+}) => {
+  const allCommitIds = await commenter.getAllCommitIds()
+  let highestReviewedCommitId = ''
+  if (existingCommitIdsBlock !== '') {
+    highestReviewedCommitId = commenter.getHighestReviewedCommitId(
+      allCommitIds,
+      commenter.getReviewedCommitIds(existingCommitIdsBlock)
+    )
+  }
+
+  if (
+    highestReviewedCommitId === '' ||
+    highestReviewedCommitId === pullRequest.head.sha
+  ) {
+    info(
+      `Will review from the base commit: ${
+        pullRequest.base.sha as string
+      }`
+    )
+    highestReviewedCommitId = pullRequest.base.sha
+  } else {
+    info(`Will review from commit: ${highestReviewedCommitId}`)
+  }
+
+  return highestReviewedCommitId
+};
+
 const patchStartEndLine = (
   patch: string
 ): {
