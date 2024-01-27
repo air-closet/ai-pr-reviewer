@@ -58,6 +58,18 @@ const SKIP_KEYWORDS = [
   '説明が必要です。'
 ]
 
+const VALID_EVENT_NAMES = [
+  'pull_request',
+  'pull_request_target',
+]
+
+interface IPullRequest {
+  [key: string]: any;
+  number: number;
+  html_url?: string | undefined;
+  body?: string | undefined;
+}
+
 export const codeReview = async (
   lightBot: Bot,
   heavyBot: Bot,
@@ -68,42 +80,19 @@ export const codeReview = async (
 
   const openaiConcurrencyLimit = pLimit(options.openaiConcurrencyLimit)
   const githubConcurrencyLimit = pLimit(options.githubConcurrencyLimit)
-
-  if (
-    context.eventName !== 'pull_request' &&
-    context.eventName !== 'pull_request_target'
-  ) {
-    warning(
-      `Skipped: current event is ${context.eventName}, only support pull_request event`
-    )
-    return
-  }
-  if (context.payload.pull_request == null) {
-    warning('Skipped: context.payload.pull_request is null')
-    return
-  }
-
   const inputs: Inputs = new Inputs()
-  inputs.title = context.payload.pull_request.title
-  if (context.payload.pull_request.body != null) {
-    inputs.description = commenter.getDescription(
-      context.payload.pull_request.body
-    )
-  }
 
-  // if the description contains ignore_keyword, skip
-  if (inputs.description.includes(ignoreKeyword)) {
-    info('Skipped: description contains ignore_keyword')
-    return
-  }
+  const isValidInput = _checkIsValidInput({ inputs, commenter })
+  if (!isValidInput) return;
+  const pullRequest = context.payload.pull_request as IPullRequest
 
-  // as gpt-3.5-turbo isn't paying attention to system message, add to inputs for now
+  // gpt-3.5-turboはシステム・メッセージに注意を払わないので、とりあえずinputsに追加する。
   inputs.systemMessage = options.systemMessage
 
-  // get SUMMARIZE_TAG message
+  // SUMMARIZE_TAGメッセージを取得する
   const existingSummarizeCmt = await commenter.findCommentWithTag(
     SUMMARIZE_TAG,
-    context.payload.pull_request.number
+    pullRequest.number
   )
   let existingCommitIdsBlock = ''
   let existingSummarizeCmtBody = ''
@@ -128,14 +117,14 @@ export const codeReview = async (
 
   if (
     highestReviewedCommitId === '' ||
-    highestReviewedCommitId === context.payload.pull_request.head.sha
+    highestReviewedCommitId === pullRequest.head.sha
   ) {
     info(
       `Will review from the base commit: ${
-        context.payload.pull_request.base.sha as string
+        pullRequest.base.sha as string
       }`
     )
-    highestReviewedCommitId = context.payload.pull_request.base.sha
+    highestReviewedCommitId = pullRequest.base.sha
   } else {
     info(`Will review from commit: ${highestReviewedCommitId}`)
   }
@@ -145,15 +134,15 @@ export const codeReview = async (
     owner: repo.owner,
     repo: repo.repo,
     base: highestReviewedCommitId,
-    head: context.payload.pull_request.head.sha
+    head: pullRequest.head.sha
   })
 
   // Fetch the diff between the target branch's base commit and the latest commit of the PR branch
   const targetBranchDiff = await octokit.repos.compareCommits({
     owner: repo.owner,
     repo: repo.repo,
-    base: context.payload.pull_request.base.sha,
-    head: context.payload.pull_request.head.sha
+    base: pullRequest.base.sha,
+    head: pullRequest.head.sha
   })
 
   const incrementalFiles = incrementalDiff.data.files
@@ -208,7 +197,7 @@ export const codeReview = async (
       githubConcurrencyLimit(async () => {
         // retrieve file contents
         let fileContent = ''
-        if (context.payload.pull_request == null) {
+        if (pullRequest == null) {
           warning('Skipped: context.payload.pull_request is null')
           return null
         }
@@ -217,7 +206,7 @@ export const codeReview = async (
             owner: repo.owner,
             repo: repo.repo,
             path: file.filename,
-            ref: context.payload.pull_request.base.sha
+            ref: pullRequest.base.sha
           })
           if (contents.data != null) {
             if (!Array.isArray(contents.data)) {
@@ -361,7 +350,7 @@ ${filename}: ${summary}
       message += releaseNotesResponse
       try {
         await commenter.updateDescription(
-          context.payload.pull_request.number,
+          pullRequest.number,
           message
         )
       } catch (e: any) {
@@ -437,7 +426,7 @@ ${SHORT_SUMMARY_END_TAG}
 
       let patchesPacked = 0
       for (const [startLine, endLine, patch] of patches) {
-        if (context.payload.pull_request == null) {
+        if (pullRequest == null) {
           warning('No pull request found, skipping.')
           continue
         }
@@ -456,7 +445,7 @@ ${SHORT_SUMMARY_END_TAG}
         let commentChain = ''
         try {
           const allChains = await commenter.getCommentChainsWithinRange(
-            context.payload.pull_request.number,
+            pullRequest.number,
             filename,
             startLine,
             endLine,
@@ -526,7 +515,7 @@ ${commentChain}
               // lgtmCount += 1
               continue
             }
-            if (context.payload.pull_request == null) {
+            if (pullRequest == null) {
               warning('No pull request found, skipping.')
               continue
             }
@@ -574,12 +563,12 @@ ${commentChain}
     // add existing_comment_ids_block with latest head sha
     summarizeComment += `\n${commenter.addReviewedCommitId(
       existingCommitIdsBlock,
-      context.payload.pull_request.head.sha
+      pullRequest.head.sha
     )}`
 
     // post the review
     await commenter.submitReview(
-      context.payload.pull_request.number,
+      pullRequest.number,
       commits[commits.length - 1].sha
     )
   }
@@ -610,6 +599,37 @@ const splitPatch = (patch: string | null | undefined): string[] => {
     result.push(patch.substring(last))
   }
   return result
+}
+
+const _checkIsValidInput = ({ inputs, commenter }: {
+  inputs: Inputs;
+  commenter: Commenter;
+}) => {
+  if (!VALID_EVENT_NAMES.includes(context.eventName)) {
+    warning(
+      `Skipped: current event is ${context.eventName}, only support pull_request event`
+    )
+    return false;
+  }
+  if (context.payload.pull_request == null) {
+    warning('Skipped: context.payload.pull_request is null')
+    return false;
+  }
+
+  inputs.title = context.payload.pull_request.title
+  if (context.payload.pull_request.body != null) {
+    inputs.description = commenter.getDescription(
+      context.payload.pull_request.body
+    )
+  }
+
+  // if the description contains ignore_keyword, skip
+  if (inputs.description.includes(ignoreKeyword)) {
+    info('Skipped: description contains ignore_keyword')
+    return false;
+  }
+
+  return true;
 }
 
 const patchStartEndLine = (
