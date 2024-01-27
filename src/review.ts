@@ -708,7 +708,7 @@ function parseReview(
 ): Review[] {
   const reviews: Review[] = []
 
-  response = sanitizeResponse(response.trim())
+  response = _sanitizeResponse(response.trim())
 
   const lines = response.split('\n')
   const lineNumberRangeRegex = /(?:^|\s)(\d+)-(\d+):\s*$/
@@ -773,50 +773,6 @@ ${review.comment}`
     }
   }
 
-  function sanitizeCodeBlock(comment: string, codeBlockLabel: string): string {
-    const codeBlockStart = `\`\`\`${codeBlockLabel}`
-    const codeBlockEnd = '```'
-    const lineNumberRegex = /^ *(\d+): /gm
-
-    let codeBlockStartIndex = comment.indexOf(codeBlockStart)
-
-    while (codeBlockStartIndex !== -1) {
-      const codeBlockEndIndex = comment.indexOf(
-        codeBlockEnd,
-        codeBlockStartIndex + codeBlockStart.length
-      )
-
-      if (codeBlockEndIndex === -1) break
-
-      const codeBlock = comment.substring(
-        codeBlockStartIndex + codeBlockStart.length,
-        codeBlockEndIndex
-      )
-      const sanitizedBlock = codeBlock.replace(lineNumberRegex, '')
-
-      comment =
-        comment.slice(0, codeBlockStartIndex + codeBlockStart.length) +
-        sanitizedBlock +
-        comment.slice(codeBlockEndIndex)
-
-      codeBlockStartIndex = comment.indexOf(
-        codeBlockStart,
-        codeBlockStartIndex +
-          codeBlockStart.length +
-          sanitizedBlock.length +
-          codeBlockEnd.length
-      )
-    }
-
-    return comment
-  }
-
-  function sanitizeResponse(comment: string): string {
-    comment = sanitizeCodeBlock(comment, 'suggestion')
-    comment = sanitizeCodeBlock(comment, 'diff')
-    return comment
-  }
-
   for (const line of lines) {
     const lineNumberRangeMatch = line.match(lineNumberRangeRegex)
 
@@ -850,6 +806,51 @@ ${review.comment}`
   storeReview()
 
   return reviews
+}
+
+const _sanitizeResponse = (comment: string): string => {
+  // TODO: 何がしたいのか理解できない
+  comment = _sanitizeCodeBlock(comment, 'suggestion')
+  comment = _sanitizeCodeBlock(comment, 'diff')
+  return comment
+}
+
+const _sanitizeCodeBlock = (comment: string, codeBlockLabel: string): string => {
+  const codeBlockStart = `\`\`\`${codeBlockLabel}`
+  const codeBlockEnd = '```'
+  const lineNumberRegex = /^ *(\d+): /gm
+
+  let codeBlockStartIndex = comment.indexOf(codeBlockStart)
+
+  while (codeBlockStartIndex !== -1) {
+    const codeBlockEndIndex = comment.indexOf(
+      codeBlockEnd,
+      codeBlockStartIndex + codeBlockStart.length
+    )
+
+    if (codeBlockEndIndex === -1) break
+
+    const codeBlock = comment.substring(
+      codeBlockStartIndex + codeBlockStart.length,
+      codeBlockEndIndex
+    )
+    const sanitizedBlock = codeBlock.replace(lineNumberRegex, '')
+
+    comment =
+      comment.slice(0, codeBlockStartIndex + codeBlockStart.length) +
+      sanitizedBlock +
+      comment.slice(codeBlockEndIndex)
+
+    codeBlockStartIndex = comment.indexOf(
+      codeBlockStart,
+      codeBlockStartIndex +
+        codeBlockStart.length +
+        sanitizedBlock.length +
+        codeBlockEnd.length
+    )
+  }
+
+  return comment
 }
 
 const doSummary = async ({
