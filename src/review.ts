@@ -102,7 +102,7 @@ export const codeReview = async (
     pullRequest
   })
 
-  // Fetch the diff between the highest reviewed commit and the latest commit of the PR branch
+  // PR ブランチの最後にレビューしたコミットと最新コミットの diff を取得する
   const incrementalDiff = await octokit.repos.compareCommits({
     owner: repo.owner,
     repo: repo.repo,
@@ -118,7 +118,9 @@ export const codeReview = async (
     head: pullRequest.head.sha
   })
 
+  // PR ブランチの最後にレビューしたコミットと最新コミットの diff、つまりプッシュされた増分
   const incrementalFiles = incrementalDiff.data.files
+  // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff、つまり PR ブランチの変更内容
   const targetBranchFiles = targetBranchDiff.data.files
 
   if (incrementalFiles == null || targetBranchFiles == null) {
@@ -126,7 +128,8 @@ export const codeReview = async (
     return
   }
 
-  // Filter out any file that is changed compared to the incremental changes
+  // 増分の変更と比較して変更されたファイルをフィルタリングする。
+  // これにより、前回のレビュー以降に変更されたファイルのみが残る。
   const files = targetBranchFiles.filter(targetBranchFile =>
     incrementalFiles.some(
       incrementalFile => incrementalFile.filename === targetBranchFile.filename
@@ -638,7 +641,7 @@ const getPreview = async({
 }
 
 /**
- * レビューを開始するコミットIDを取得する
+ * 最後にレビューしたコミットIDを取得する
  */
 const getHighestReviewedCommitId = async ({
   commenter,
