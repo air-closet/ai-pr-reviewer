@@ -310,16 +310,17 @@ ${hunks.oldHunk}
     }
   }
 
-  const summaries = (await Promise.all(summaryPromises)).filter(
+  const summaryResults = await Promise.all(summaryPromises);
+  const summaries = summaryResults.filter(
     summary => summary !== null
   ) as Array<[string, string, boolean]>
 
   if (summaries.length > 0) {
-    const batchSize = 10
-    // join summaries into one in the batches of batchSize
+    const BATCH_SIZE = 10
+    // join summaries into one in the batches of BATCH_SIZE
     // and ask the bot to summarize the summaries
-    for (let i = 0; i < summaries.length; i += batchSize) {
-      const summariesBatch = summaries.slice(i, i + batchSize)
+    for (let i = 0; i < summaries.length; i += BATCH_SIZE) {
+      const summariesBatch = summaries.slice(i, i + BATCH_SIZE)
       for (const [filename, summary] of summariesBatch) {
         inputs.rawSummary += `---
 ${filename}: ${summary}
@@ -853,6 +854,9 @@ const _sanitizeCodeBlock = (comment: string, codeBlockLabel: string): string => 
   return comment
 }
 
+/**
+ * ファイルの変更内容を要約し、レビューが必要かどうかを判定する
+ */
 const doSummary = async ({
   filename,
   fileDiff,
@@ -897,26 +901,27 @@ const doSummary = async ({
     if (summarizeResp === '') {
       info('summarize: nothing obtained from openai')
       return null
-    } else {
-      if (options.reviewSimpleChanges === false) {
-        // 分類をトリアージするためにコメントを解析する
-        // フォーマットは: [TRIAGE]: <NEEDS_REVIEW or APPROVED>
-        // 変更がレビューを必要とする場合はtrue、それ以外はfalseを返します。
-        const triageRegex = /\[TRIAGE\]:\s*(NEEDS_REVIEW|APPROVED)/
-        const triageMatch = summarizeResp.match(triageRegex)
-
-        if (triageMatch != null) {
-          const triage = triageMatch[1]
-          const needsReview = triage === 'NEEDS_REVIEW'
-
-          // この行をコメントから削除します。
-          const summary = summarizeResp.replace(triageRegex, '').trim()
-          info(`filename: ${filename}, triage: ${triage}`)
-          return [filename, summary, needsReview]
-        }
-      }
-      return [filename, summarizeResp, true]
     }
+
+    if (options.reviewSimpleChanges === false) {
+      // 分類をトリアージするためにコメントを解析する
+      // フォーマットは: [TRIAGE]: <NEEDS_REVIEW or APPROVED>
+      // 変更がレビューを必要とする場合はtrue、それ以外はfalseを返します。
+      const triageRegex = /\[TRIAGE\]:\s*(NEEDS_REVIEW|APPROVED)/
+      const triageMatch = summarizeResp.match(triageRegex)
+
+      // TODO: 厳密等価演算子でなくていいのか確認
+      if (triageMatch != null) {
+        const triage = triageMatch[1]
+        const needsReview = triage === 'NEEDS_REVIEW'
+
+        // トリアージを削除して要約をトリミングする
+        const summary = summarizeResp.replace(triageRegex, '').trim()
+        info(`filename: ${filename}, triage: ${triage}`)
+        return [filename, summary, needsReview]
+      }
+    }
+    return [filename, summarizeResp, true]
   } catch (e: any) {
     warning(`summarize: error from openai: ${e as string}`)
     return null
