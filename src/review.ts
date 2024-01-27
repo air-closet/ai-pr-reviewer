@@ -88,22 +88,13 @@ export const codeReview = async (
 
   // gpt-3.5-turboはシステム・メッセージに注意を払わないので、とりあえずinputsに追加する。
   inputs.systemMessage = options.systemMessage
-
-  // SUMMARIZE_TAGメッセージを取得する
-  const existingSummarizeCmt = await commenter.findCommentWithTag(
-    SUMMARIZE_TAG,
-    pullRequest.number
-  )
-  let existingCommitIdsBlock = ''
-  let existingSummarizeCmtBody = ''
-  if (existingSummarizeCmt != null) {
-    existingSummarizeCmtBody = existingSummarizeCmt.body
-    inputs.rawSummary = commenter.getRawSummary(existingSummarizeCmtBody)
-    inputs.shortSummary = commenter.getShortSummary(existingSummarizeCmtBody)
-    existingCommitIdsBlock = commenter.getReviewedCommitIdsBlock(
-      existingSummarizeCmtBody
-    )
-  }
+  const {
+    existingCommitIdsBlock,
+    rawSummary,
+    shortSummary
+  } = await getPreview({ commenter, pullRequest });
+  inputs.rawSummary = rawSummary
+  inputs.shortSummary = shortSummary
 
   const allCommitIds = await commenter.getAllCommitIds()
   // find highest reviewed commit id
@@ -137,7 +128,7 @@ export const codeReview = async (
     head: pullRequest.head.sha
   })
 
-  // Fetch the diff between the target branch's base commit and the latest commit of the PR branch
+  // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff を取得する
   const targetBranchDiff = await octokit.repos.compareCommits({
     owner: repo.owner,
     repo: repo.repo,
@@ -632,6 +623,37 @@ const _checkIsValidInput = ({ inputs, commenter }: {
   return true;
 }
 
+const getPreview = async({
+  commenter,
+  pullRequest
+} : {
+  commenter: Commenter;
+  pullRequest: IPullRequest;
+}) => {
+  // SUMMARIZE_TAGメッセージを取得する
+  const existingSummarizeCmt = await commenter.findCommentWithTag(
+    SUMMARIZE_TAG,
+    pullRequest.number
+  )
+
+  if (existingSummarizeCmt == null) {
+    return {
+      existingCommitIdsBlock: '',
+      rawSummary: '',
+      shortSummary: ''
+    }
+  }
+
+  const existingSummarizeCmtBody = existingSummarizeCmt.body
+  const existingCommitIdsBlock = commenter.getReviewedCommitIdsBlock(existingSummarizeCmtBody)
+  const rawSummary = commenter.getRawSummary(existingSummarizeCmtBody)
+  const shortSummary = commenter.getShortSummary(existingSummarizeCmtBody)
+  return {
+    existingCommitIdsBlock,
+    rawSummary,
+    shortSummary
+  }
+}
 const patchStartEndLine = (
   patch: string
 ): {
