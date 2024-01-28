@@ -84,6 +84,41 @@ interface IFile {
   previous_filename?: string | undefined;
 }
 
+/**
+ * 要約の結果
+ * @property {string} 0 - ファイル名
+ * @property {string} 1 - 要約
+ * @property {boolean} 2 - レビューが必要かどうか
+ */
+type TSummaryResult = [string, string, boolean];
+const SUMMARY_RESULT = {
+  FILENAME: 0,
+  SUMMARY: 1,
+  NEEDS_REVIEW: 2
+} as const
+
+/**
+ * Githubから取得したパッチ
+ * @property {number} 0 - パッチの開始行
+ * @property {number} 1 - パッチの終了行
+ * @property {string} 2 - パッチの内容
+ */
+type TPatch = [number, number, string];
+const PATCH = {
+  START_LINE: 0,
+  END_LINE: 1,
+  CONTENT: 2
+} as const
+
+/**
+ * Githubのファイルと変更内容
+ * @property {string} 0 - ファイル名
+ * @property {string} 1 - ファイルコンテンツ
+ * @property {string} 2 - ファイルの変更内容
+ * @property {TPatch[]} 3 - パッチ
+ */
+type TFilesAndChanges = [string, string, string, TPatch[]];
+
 export const codeReview = async (
   lightBot: Bot,
   heavyBot: Bot,
@@ -171,9 +206,7 @@ export const codeReview = async (
   }
 
   // レビューのため、hunksを取得する
-  const filteredFiles: Array<
-    [string, string, string, Array<[number, number, string]>] | null
-  > = await Promise.all(
+  const filteredFiles: (TFilesAndChanges | null)[] = await Promise.all(
     filterSelectedFiles.map(file =>
       githubConcurrencyLimit(async () => {
         return __retrieveFileContents({ file, pullRequest })
@@ -182,9 +215,7 @@ export const codeReview = async (
   )
 
   // 取得したファイルが空の場合は除外する
-  const filesAndChanges = filteredFiles.filter(file => file !== null) as Array<
-    [string, string, string, Array<[number, number, string]>]
-  >
+  const filesAndChanges = filteredFiles.filter(file => file !== null) as TFilesAndChanges[]
 
   // レビューできるファイルがない場合はスキップする
   if (filesAndChanges.length === 0) {
@@ -210,7 +241,7 @@ export const codeReview = async (
   const summaryResults = await Promise.all(summaryPromises);
   const summaries = summaryResults.filter(
     summary => summary !== null
-  ) as Array<[string, string, boolean]>
+  ) as TSummaryResult[]
 
   if (summaries.length > 0) {
     const BATCH_SIZE = 10
@@ -281,11 +312,7 @@ ${filename}: ${summary}
 
   if (!options.disableReview) {
     const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
-      const needsReview =
-        summaries.find(
-          ([summaryFilename]) => summaryFilename === filename
-        )?.[2] ?? true
-      return needsReview
+      return __checkIsNeedReview({ filename, summaries })
     })
 
     const reviewPromises = []
@@ -366,7 +393,7 @@ const __checkIsValidInput = ({ inputs, commenter }: {
     )
   }
 
-  // if the description contains ignore_keyword, skip
+  // 説明文にignore_keywordが含まれている場合はスキップする。
   if (inputs.description.includes(ignoreKeyword)) {
     info('Skipped: description contains ignore_keyword')
     return false;
@@ -521,7 +548,7 @@ const __retrieveFileContents = async ({
     fileDiff = file.patch
   }
 
-  const patches: Array<[number, number, string]> = []
+  const patches: TPatch[] = []
   for (const patch of __splitPatch(file.patch)) {
     const patchLines = __patchStartEndLine(patch)
     if (patchLines == null) {
@@ -549,12 +576,7 @@ ${hunks.oldHunk}
     ])
   }
   if (patches.length > 0) {
-    return [file.filename, fileContent, fileDiff, patches] as [
-      string,
-      string,
-      string,
-      Array<[number, number, string]>
-    ]
+    return [file.filename, fileContent, fileDiff, patches] as TFilesAndChanges
   } else {
     return null
   }
@@ -601,14 +623,14 @@ const __parsePatch = (
 
   let newLine = hunkInfo.newHunk.startLine
 
-  const lines = patch.split('\n').slice(1) // Skip the @@ line
+  const lines = patch.split('\n').slice(1) // @@ の行をスキップする
 
-  // Remove the last line if it's empty
+  // 最後の行が空の場合は削除する
   if (lines[lines.length - 1] === '') {
     lines.pop()
   }
 
-  // Skip annotations for the first 3 and last 3 lines
+  // 最初の3行と最後の3行の注釈をスキップする。
   const skipStart = 3
   const skipEnd = 3
 
@@ -652,7 +674,7 @@ interface Review {
 
 function __parseReview(
   response: string,
-  patches: Array<[number, number, string]>,
+  patches: TPatch[],
   debug = false
 ): Review[] {
   const reviews: Review[] = []
@@ -709,8 +731,8 @@ ${review.comment}`
           review.comment = `> Note: This review was outside of the patch, but no patch was found that overlapped with it. Original lines [${review.startLine}-${review.endLine}]
 
 ${review.comment}`
-          review.startLine = patches[0][0]
-          review.endLine = patches[0][1]
+          review.startLine = patches[0][PATCH.START_LINE]
+          review.endLine = patches[0][PATCH.END_LINE]
         }
       }
 
@@ -758,7 +780,6 @@ ${review.comment}`
 }
 
 const __sanitizeResponse = (comment: string): string => {
-  // TODO: 何がしたいのか理解できない
   comment = __sanitizeCodeBlock(comment, 'suggestion')
   comment = __sanitizeCodeBlock(comment, 'diff')
   return comment
@@ -819,7 +840,7 @@ const __doSummary = async ({
   inputs: Inputs;
   prompts: Prompts;
   lightBot: Bot;
-}): Promise<[string, string, boolean] | null> => {
+}): Promise<TSummaryResult | null> => {
   info(`summarize: ${filename}`)
   const ins = inputs.clone()
   if (fileDiff.length === 0) {
@@ -854,7 +875,7 @@ const __doSummary = async ({
     if (options.reviewSimpleChanges === false) {
       // 分類をトリアージするためにコメントを解析する
       // フォーマットは: [TRIAGE]: <NEEDS_REVIEW or APPROVED>
-      // 変更がレビューを必要とする場合はtrue、それ以外はfalseを返します。
+      // 変更がレビューを必要とする場合はtrue、それ以外はfalseを返す
       const triageRegex = /\[TRIAGE\]:\s*(NEEDS_REVIEW|APPROVED)/
       const triageMatch = summarizeResp.match(triageRegex)
 
@@ -957,7 +978,7 @@ const doReview = async ({
         }`
       )
     }
-    // try packing comment_chain into this request
+    // comment_chainをこのリクエストに詰め込んでみる
     const commentChainTokens = getTokenCount(commentChain)
     if (
       tokens + commentChainTokens >
@@ -986,7 +1007,7 @@ ${commentChain}
   }
 
   if (patchesPacked > 0) {
-    // perform review
+    // レビューを行う
     try {
       const [response] = await heavyBot.chat(
         prompts.renderReviewFileDiff(ins),
@@ -997,16 +1018,15 @@ ${commentChain}
         reviewsFailed.push(`${filename} (no response)`)
         return
       }
-      // parse review
+      // レビューを解析する
       const reviews = __parseReview(response, patches, options.debug)
       for (const review of reviews) {
-        // check for LGTM
+        // LGTMかどうか確認する
         if (
           !options.reviewCommentLGTM &&
           // スキップ対象の文言が含まれていた場合はスキップする
           SKIP_KEYWORDS.some(keyword => review.comment.includes(keyword))
         ) {
-          // lgtmCount += 1
           continue
         }
         if (pullRequest == null) {
@@ -1015,7 +1035,6 @@ ${commentChain}
         }
 
         try {
-          // reviewCount += 1
           await commenter.bufferReviewComment(
             filename,
             review.startLine,
@@ -1056,4 +1075,15 @@ ${SHORT_SUMMARY_END_TAG}
 
 ---
 `
+}
+
+const __checkIsNeedReview = ({
+  filename,
+  summaries
+} : {
+  filename: string;
+  summaries: TSummaryResult[];
+}) => {
+  const summary = summaries.find(([summaryFilename]) => summaryFilename === filename)
+  return summary?.[SUMMARY_RESULT.NEEDS_REVIEW] ?? true
 }
