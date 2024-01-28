@@ -273,17 +273,11 @@ ${filename}: ${summary}
   )
   inputs.shortSummary = summarizeShortResponse
 
-  let summarizeComment = `${summarizeFinalResponse}
-${RAW_SUMMARY_START_TAG}
-${inputs.rawSummary}
-${RAW_SUMMARY_END_TAG}
-${SHORT_SUMMARY_START_TAG}
-${inputs.shortSummary}
-${SHORT_SUMMARY_END_TAG}
-
----
-
-`
+  let summarizeComment = _generateSummarizeComment({
+    summarizeFinalResponse,
+    rawSummary: inputs.rawSummary,
+    shortSummary: inputs.shortSummary,
+  })
 
   if (!options.disableReview) {
     const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
@@ -1041,4 +1035,25 @@ ${commentChain}
       reviewsFailed.push(`${filename} (${e as string})`)
     }
   }
+}
+
+const _generateSummarizeComment = ({
+  summarizeFinalResponse,
+  rawSummary,
+  shortSummary,
+} : {
+  summarizeFinalResponse: string;
+  rawSummary: string;
+  shortSummary: string;
+}) => {
+  return `${summarizeFinalResponse}
+${RAW_SUMMARY_START_TAG}
+${rawSummary}
+${RAW_SUMMARY_END_TAG}
+${SHORT_SUMMARY_START_TAG}
+${shortSummary}
+${SHORT_SUMMARY_END_TAG}
+
+---
+`
 }
