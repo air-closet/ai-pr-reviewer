@@ -170,97 +170,23 @@ export const codeReview = async (
     return
   }
 
-  // find hunks to review
+  // レビューのため、hunksを取得する
   const filteredFiles: Array<
     [string, string, string, Array<[number, number, string]>] | null
   > = await Promise.all(
     filterSelectedFiles.map(file =>
       githubConcurrencyLimit(async () => {
-        // retrieve file contents
-        let fileContent = ''
-        if (pullRequest == null) {
-          warning('Skipped: context.payload.pull_request is null')
-          return null
-        }
-        try {
-          const contents = await octokit.repos.getContent({
-            owner: repo.owner,
-            repo: repo.repo,
-            path: file.filename,
-            ref: pullRequest.base.sha
-          })
-          if (contents.data != null) {
-            if (!Array.isArray(contents.data)) {
-              if (
-                contents.data.type === 'file' &&
-                contents.data.content != null
-              ) {
-                fileContent = Buffer.from(
-                  contents.data.content,
-                  'base64'
-                ).toString()
-              }
-            }
-          }
-        } catch (e: any) {
-          warning(
-            `Failed to get file contents: ${
-              e as string
-            }. This is OK if it's a new file.`
-          )
-        }
-
-        let fileDiff = ''
-        if (file.patch != null) {
-          fileDiff = file.patch
-        }
-
-        const patches: Array<[number, number, string]> = []
-        for (const patch of splitPatch(file.patch)) {
-          const patchLines = patchStartEndLine(patch)
-          if (patchLines == null) {
-            continue
-          }
-          const hunks = parsePatch(patch)
-          if (hunks == null) {
-            continue
-          }
-          const hunksStr = `
----new_hunk---
-\`\`\`
-${hunks.newHunk}
-\`\`\`
-
----old_hunk---
-\`\`\`
-${hunks.oldHunk}
-\`\`\`
-`
-          patches.push([
-            patchLines.newHunk.startLine,
-            patchLines.newHunk.endLine,
-            hunksStr
-          ])
-        }
-        if (patches.length > 0) {
-          return [file.filename, fileContent, fileDiff, patches] as [
-            string,
-            string,
-            string,
-            Array<[number, number, string]>
-          ]
-        } else {
-          return null
-        }
+        return _retrieveFileContents({ file, pullRequest })
       })
     )
   )
 
-  // Filter out any null results
+  // 取得したファイルが空の場合は除外する
   const filesAndChanges = filteredFiles.filter(file => file !== null) as Array<
     [string, string, string, Array<[number, number, string]>]
   >
 
+  // レビューできるファイルがない場合はスキップする
   if (filesAndChanges.length === 0) {
     error('Skipped: no files to review')
     return
@@ -287,8 +213,7 @@ ${hunks.oldHunk}
 
   if (summaries.length > 0) {
     const BATCH_SIZE = 10
-    // join summaries into one in the batches of BATCH_SIZE
-    // and ask the bot to summarize the summaries
+    // サマリーをBATCH_SIZEのバッチにまとめ、ボットに要約を依頼する
     for (let i = 0; i < summaries.length; i += BATCH_SIZE) {
       const summariesBatch = summaries.slice(i, i + BATCH_SIZE)
       for (const [filename, summary] of summariesBatch) {
@@ -710,6 +635,91 @@ const _filterSelectedFiles = ({
   return {
     filterSelectedFiles,
     filterIgnoredFiles
+  }
+}
+
+const _retrieveFileContents = async ({
+  file,
+  pullRequest
+} : {
+  file: IFile;
+  pullRequest: IPullRequest;
+}) => {
+  let fileContent = ''
+  if (pullRequest == null) {
+    warning('Skipped: context.payload.pull_request is null')
+    return null
+  }
+  try {
+    // ベースブランチのファイルコンテンツを取得する
+    const contents = await octokit.repos.getContent({
+      owner: repo.owner,
+      repo: repo.repo,
+      path: file.filename,
+      ref: pullRequest.base.sha
+    })
+    if (contents.data != null) {
+      if (!Array.isArray(contents.data)) {
+        if (
+          contents.data.type === 'file' &&
+          contents.data.content != null
+        ) {
+          fileContent = Buffer.from(
+            contents.data.content,
+            'base64'
+          ).toString()
+        }
+      }
+    }
+  } catch (e: any) {
+    warning(
+      `Failed to get file contents: ${
+        e as string
+      }. This is OK if it's a new file.`
+    )
+  }
+
+  let fileDiff = ''
+  if (file.patch != null) {
+    fileDiff = file.patch
+  }
+
+  const patches: Array<[number, number, string]> = []
+  for (const patch of splitPatch(file.patch)) {
+    const patchLines = patchStartEndLine(patch)
+    if (patchLines == null) {
+      continue
+    }
+    const hunks = parsePatch(patch)
+    if (hunks == null) {
+      continue
+    }
+    const hunksStr = `
+---new_hunk---
+\`\`\`
+${hunks.newHunk}
+\`\`\`
+
+---old_hunk---
+\`\`\`
+${hunks.oldHunk}
+\`\`\`
+`
+    patches.push([
+      patchLines.newHunk.startLine,
+      patchLines.newHunk.endLine,
+      hunksStr
+    ])
+  }
+  if (patches.length > 0) {
+    return [file.filename, fileContent, fileDiff, patches] as [
+      string,
+      string,
+      string,
+      Array<[number, number, string]>
+    ]
+  } else {
+    return null
   }
 }
 
