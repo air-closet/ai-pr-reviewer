@@ -192,6 +192,7 @@ export const codeReview = async (
     return
   }
 
+  // ファイルの変更を要約し、レビューが必要かどうかを判定する
   const summaryPromises = []
   const skippedFiles = []
   for (const [filename, fileDiff] of filesAndChanges) {
@@ -221,7 +222,7 @@ export const codeReview = async (
 ${filename}: ${summary}
 `
       }
-      // ask chatgpt to summarize the summaries
+      // chatgptに要約を依頼する
       const [summarizeResp] = await heavyBot.chat(
         prompts.renderSummarizeChangesets(inputs),
         {}
@@ -234,7 +235,7 @@ ${filename}: ${summary}
     }
   }
 
-  // final summary
+  // 最終版の要約
   const [summarizeFinalResponse] = await heavyBot.chat(
     prompts.renderSummarize(inputs),
     {}
@@ -244,7 +245,7 @@ ${filename}: ${summary}
   }
 
   if (options.disableReleaseNotes === false) {
-    // final release notes
+    // 最終版リリースノート
     const [releaseNotesResponse] = await heavyBot.chat(
       prompts.renderSummarizeReleaseNotes(inputs),
       {}
@@ -265,7 +266,7 @@ ${filename}: ${summary}
     }
   }
 
-  // generate a short summary as well
+  // 短い要約も生成する
   const [summarizeShortResponse] = await heavyBot.chat(
     prompts.renderSummarizeShort(inputs),
     {}
@@ -293,170 +294,12 @@ ${SHORT_SUMMARY_END_TAG}
       return needsReview
     })
 
-    const reviewsSkipped = filesAndChanges
-      .filter(
-        ([filename]) =>
-          !filesAndChangesReview.some(
-            ([reviewFilename]) => reviewFilename === filename
-          )
-      )
-      .map(([filename]) => filename)
-
-    // failed reviews array
-    const reviewsFailed: string[] = []
-    const doReview = async (
-      filename: string,
-      fileContent: string,
-      patches: Array<[number, number, string]>
-    ): Promise<void> => {
-      info(`reviewing ${filename}`)
-      // make a copy of inputs
-      const ins: Inputs = inputs.clone()
-      ins.filename = filename
-
-      // calculate tokens based on inputs so far
-      let tokens = getTokenCount(prompts.renderReviewFileDiff(ins))
-      // loop to calculate total patch tokens
-      let patchesToPack = 0
-      for (const [, , patch] of patches) {
-        const patchTokens = getTokenCount(patch)
-        if (tokens + patchTokens > options.heavyTokenLimits.requestTokens) {
-          info(
-            `only packing ${patchesToPack} / ${patches.length} patches, tokens: ${tokens} / ${options.heavyTokenLimits.requestTokens}`
-          )
-          break
-        }
-        tokens += patchTokens
-        patchesToPack += 1
-      }
-
-      let patchesPacked = 0
-      for (const [startLine, endLine, patch] of patches) {
-        if (pullRequest == null) {
-          warning('No pull request found, skipping.')
-          continue
-        }
-        // see if we can pack more patches into this request
-        if (patchesPacked >= patchesToPack) {
-          info(
-            `unable to pack more patches into this request, packed: ${patchesPacked}, total patches: ${patches.length}, skipping.`
-          )
-          if (options.debug) {
-            info(`prompt so far: ${prompts.renderReviewFileDiff(ins)}`)
-          }
-          break
-        }
-        patchesPacked += 1
-
-        let commentChain = ''
-        try {
-          const allChains = await commenter.getCommentChainsWithinRange(
-            pullRequest.number,
-            filename,
-            startLine,
-            endLine,
-            COMMENT_REPLY_TAG
-          )
-
-          if (allChains.length > 0) {
-            info(`Found comment chains: ${allChains} for ${filename}`)
-            commentChain = allChains
-          }
-        } catch (e: any) {
-          warning(
-            `Failed to get comments: ${e as string}, skipping. backtrace: ${
-              e.stack as string
-            }`
-          )
-        }
-        // try packing comment_chain into this request
-        const commentChainTokens = getTokenCount(commentChain)
-        if (
-          tokens + commentChainTokens >
-          options.heavyTokenLimits.requestTokens
-        ) {
-          commentChain = ''
-        } else {
-          tokens += commentChainTokens
-        }
-
-        ins.patches += `
-${patch}
-`
-        if (commentChain !== '') {
-          ins.patches += `
----comment_chains---
-\`\`\`
-${commentChain}
-\`\`\`
-`
-        }
-
-        ins.patches += `
----end_change_section---
-`
-      }
-
-      if (patchesPacked > 0) {
-        // perform review
-        try {
-          const [response] = await heavyBot.chat(
-            prompts.renderReviewFileDiff(ins),
-            {}
-          )
-          if (response === '') {
-            info('review: nothing obtained from openai')
-            reviewsFailed.push(`${filename} (no response)`)
-            return
-          }
-          // parse review
-          const reviews = parseReview(response, patches, options.debug)
-          for (const review of reviews) {
-            // check for LGTM
-            if (
-              !options.reviewCommentLGTM &&
-              // スキップ対象の文言が含まれていた場合はスキップする
-              SKIP_KEYWORDS.some(keyword => review.comment.includes(keyword))
-            ) {
-              // lgtmCount += 1
-              continue
-            }
-            if (pullRequest == null) {
-              warning('No pull request found, skipping.')
-              continue
-            }
-
-            try {
-              // reviewCount += 1
-              await commenter.bufferReviewComment(
-                filename,
-                review.startLine,
-                review.endLine,
-                `${review.comment}`
-              )
-            } catch (e: any) {
-              reviewsFailed.push(`${filename} comment failed (${e as string})`)
-            }
-          }
-        } catch (e: any) {
-          warning(
-            `Failed to review: ${e as string}, skipping. backtrace: ${
-              e.stack as string
-            }`
-          )
-          reviewsFailed.push(`${filename} (${e as string})`)
-        }
-      } else {
-        reviewsSkipped.push(`${filename} (diff too large)`)
-      }
-    }
-
     const reviewPromises = []
-    for (const [filename, fileContent, , patches] of filesAndChangesReview) {
+    for (const [filename, , , patches] of filesAndChangesReview) {
       if (options.maxFiles <= 0 || reviewPromises.length < options.maxFiles) {
         reviewPromises.push(
           openaiConcurrencyLimit(async () => {
-            await doReview(filename, fileContent, patches)
+            await doReview({ filename, patches, inputs, prompts, heavyBot, options, pullRequest, commenter })
           })
         )
       } else {
@@ -466,20 +309,20 @@ ${commentChain}
 
     await Promise.all(reviewPromises)
 
-    // add existing_comment_ids_block with latest head sha
+    // 既存のコメントIDブロックに最新のhead shaを追加する。
     summarizeComment += `\n${commenter.addReviewedCommitId(
       existingCommitIdsBlock,
       pullRequest.head.sha
     )}`
 
-    // post the review
+    // レビューを投稿する
     await commenter.submitReview(
       pullRequest.number,
       commits[commits.length - 1].sha
     )
   }
 
-  // post the final summary comment
+  // サマリーのコメントを投稿する
   await commenter.comment(`${summarizeComment}`, SUMMARIZE_TAG, 'replace')
 }
 
@@ -1036,5 +879,166 @@ const doSummary = async ({
   } catch (e: any) {
     warning(`summarize: error from openai: ${e as string}`)
     return null
+  }
+}
+
+const doReview = async ({
+  filename,
+  patches,
+  inputs,
+  prompts,
+  heavyBot,
+  options,
+  pullRequest,
+  commenter,
+} : {
+  filename: string;
+  patches: Array<[number, number, string]>;
+  inputs: Inputs;
+  prompts: Prompts;
+  heavyBot: Bot;
+  options: Options;
+  pullRequest: IPullRequest;
+  commenter: Commenter;
+}): Promise<void> => {
+  info(`reviewing ${filename}`)
+  const reviewsFailed: string[] = []
+  // インプットのコピーを作成する
+  const ins: Inputs = inputs.clone()
+  ins.filename = filename
+
+  // これまでの入力に基づいてトークンを計算する
+  let tokens = getTokenCount(prompts.renderReviewFileDiff(ins))
+  // パッチトークンの合計を計算するループ
+  let patchesToPack = 0
+  for (const [, , patch] of patches) {
+    const patchTokens = getTokenCount(patch)
+    if (tokens + patchTokens > options.heavyTokenLimits.requestTokens) {
+      info(
+        `only packing ${patchesToPack} / ${patches.length} patches, tokens: ${tokens} / ${options.heavyTokenLimits.requestTokens}`
+      )
+      break
+    }
+    tokens += patchTokens
+    patchesToPack += 1
+  }
+
+  let patchesPacked = 0
+  for (const [startLine, endLine, patch] of patches) {
+    if (pullRequest == null) {
+      warning('No pull request found, skipping.')
+      continue
+    }
+    // このリクエストにもっと多くのパッチを詰め込めるかどうか見てみよう
+    // TODO: ちょっと何を言っているのかわからないので、後で確認
+    if (patchesPacked >= patchesToPack) {
+      info(
+        `unable to pack more patches into this request, packed: ${patchesPacked}, total patches: ${patches.length}, skipping.`
+      )
+      if (options.debug) {
+        info(`prompt so far: ${prompts.renderReviewFileDiff(ins)}`)
+      }
+      break
+    }
+    patchesPacked += 1
+
+    let commentChain = ''
+    try {
+      const allChains = await commenter.getCommentChainsWithinRange(
+        pullRequest.number,
+        filename,
+        startLine,
+        endLine,
+        COMMENT_REPLY_TAG
+      )
+
+      if (allChains.length > 0) {
+        info(`Found comment chains: ${allChains} for ${filename}`)
+        commentChain = allChains
+      }
+    } catch (e: any) {
+      warning(
+        `Failed to get comments: ${e as string}, skipping. backtrace: ${
+          e.stack as string
+        }`
+      )
+    }
+    // try packing comment_chain into this request
+    const commentChainTokens = getTokenCount(commentChain)
+    if (
+      tokens + commentChainTokens >
+      options.heavyTokenLimits.requestTokens
+    ) {
+      commentChain = ''
+    } else {
+      tokens += commentChainTokens
+    }
+
+    ins.patches += `
+${patch}
+`
+    if (commentChain !== '') {
+      ins.patches += `
+---comment_chains---
+\`\`\`
+${commentChain}
+\`\`\`
+`
+    }
+
+    ins.patches += `
+---end_change_section---
+`
+  }
+
+  if (patchesPacked > 0) {
+    // perform review
+    try {
+      const [response] = await heavyBot.chat(
+        prompts.renderReviewFileDiff(ins),
+        {}
+      )
+      if (response === '') {
+        info('review: nothing obtained from openai')
+        reviewsFailed.push(`${filename} (no response)`)
+        return
+      }
+      // parse review
+      const reviews = parseReview(response, patches, options.debug)
+      for (const review of reviews) {
+        // check for LGTM
+        if (
+          !options.reviewCommentLGTM &&
+          // スキップ対象の文言が含まれていた場合はスキップする
+          SKIP_KEYWORDS.some(keyword => review.comment.includes(keyword))
+        ) {
+          // lgtmCount += 1
+          continue
+        }
+        if (pullRequest == null) {
+          warning('No pull request found, skipping.')
+          continue
+        }
+
+        try {
+          // reviewCount += 1
+          await commenter.bufferReviewComment(
+            filename,
+            review.startLine,
+            review.endLine,
+            `${review.comment}`
+          )
+        } catch (e: any) {
+          reviewsFailed.push(`${filename} comment failed (${e as string})`)
+        }
+      }
+    } catch (e: any) {
+      warning(
+        `Failed to review: ${e as string}, skipping. backtrace: ${
+          e.stack as string
+        }`
+      )
+      reviewsFailed.push(`${filename} (${e as string})`)
+    }
   }
 }
