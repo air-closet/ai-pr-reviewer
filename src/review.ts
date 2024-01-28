@@ -70,6 +70,20 @@ interface IPullRequest {
   body?: string | undefined;
 }
 
+interface IFile {
+  sha: string;
+  filename: string;
+  status: "added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged";
+  additions: number;
+  deletions: number;
+  changes: number;
+  blob_url: string;
+  raw_url: string;
+  contents_url: string;
+  patch?: string | undefined;
+  previous_filename?: string | undefined;
+}
+
 export const codeReview = async (
   lightBot: Bot,
   heavyBot: Bot,
@@ -87,6 +101,7 @@ export const codeReview = async (
   const pullRequest = context.payload.pull_request as IPullRequest
 
   // gpt-3.5-turboはシステム・メッセージに注意を払わないので、とりあえずinputsに追加する。
+  // TODO: ちょっと何を言っているのかわからないので、後で確認
   inputs.systemMessage = options.systemMessage
   const {
     existingCommitIdsBlock,
@@ -141,17 +156,7 @@ export const codeReview = async (
     return
   }
 
-  // skip files if they are filtered out
-  const filterSelectedFiles = []
-  const filterIgnoredFiles = []
-  for (const file of files) {
-    if (!options.checkPath(file.filename)) {
-      info(`skip for excluded path: ${file.filename}`)
-      filterIgnoredFiles.push(file)
-    } else {
-      filterSelectedFiles.push(file)
-    }
-  }
+  const { filterSelectedFiles } = _filterSelectedFiles({ files, options });
 
   if (filterSelectedFiles.length === 0) {
     warning('Skipped: filterSelectedFiles is null')
@@ -677,6 +682,36 @@ const getHighestReviewedCommitId = async ({
 
   return highestReviewedCommitId
 };
+
+/**
+ * オプションに基づいてファイルをフィルタリングする
+ * @param files フィルタリングするファイル
+ * @param options オプション
+ */
+const _filterSelectedFiles = ({
+  files,
+  options
+} : {
+  files: IFile[];
+  options: Options;
+}) => {
+  // フィルタリングされたファイルをスキップする
+  const filterSelectedFiles = []
+  const filterIgnoredFiles = []
+  for (const file of files) {
+    if (!options.checkPath(file.filename)) {
+      info(`skip for excluded path: ${file.filename}`)
+      filterIgnoredFiles.push(file)
+    } else {
+      filterSelectedFiles.push(file)
+    }
+  }
+
+  return {
+    filterSelectedFiles,
+    filterIgnoredFiles
+  }
+}
 
 const patchStartEndLine = (
   patch: string
