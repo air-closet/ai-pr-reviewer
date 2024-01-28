@@ -96,7 +96,7 @@ export const codeReview = async (
   const githubConcurrencyLimit = pLimit(options.githubConcurrencyLimit)
   const inputs: Inputs = new Inputs()
 
-  const isValidInput = _checkIsValidInput({ inputs, commenter })
+  const isValidInput = __checkIsValidInput({ inputs, commenter })
   if (!isValidInput) return;
   const pullRequest = context.payload.pull_request as IPullRequest
 
@@ -107,11 +107,11 @@ export const codeReview = async (
     existingCommitIdsBlock,
     rawSummary,
     shortSummary
-  } = await getPreview({ commenter, pullRequest });
+  } = await __getPreview({ commenter, pullRequest });
   inputs.rawSummary = rawSummary
   inputs.shortSummary = shortSummary
 
-  const highestReviewedCommitId = await getHighestReviewedCommitId({
+  const highestReviewedCommitId = await __getHighestReviewedCommitId({
     commenter,
     existingCommitIdsBlock,
     pullRequest
@@ -156,7 +156,7 @@ export const codeReview = async (
     return
   }
 
-  const { filterSelectedFiles } = _filterSelectedFiles({ files, options });
+  const { filterSelectedFiles } = __filterSelectedFiles({ files, options });
 
   if (filterSelectedFiles.length === 0) {
     warning('Skipped: filterSelectedFiles is null')
@@ -176,7 +176,7 @@ export const codeReview = async (
   > = await Promise.all(
     filterSelectedFiles.map(file =>
       githubConcurrencyLimit(async () => {
-        return _retrieveFileContents({ file, pullRequest })
+        return __retrieveFileContents({ file, pullRequest })
       })
     )
   )
@@ -199,7 +199,7 @@ export const codeReview = async (
     if (options.maxFiles <= 0 || summaryPromises.length < options.maxFiles) {
       summaryPromises.push(
         openaiConcurrencyLimit(
-          async () => await doSummary({ filename, fileDiff, options, inputs, prompts, lightBot })
+          async () => await __doSummary({ filename, fileDiff, options, inputs, prompts, lightBot })
         )
       )
     } else {
@@ -273,7 +273,7 @@ ${filename}: ${summary}
   )
   inputs.shortSummary = summarizeShortResponse
 
-  let summarizeComment = _generateSummarizeComment({
+  let summarizeComment = __generateSummarizeComment({
     summarizeFinalResponse,
     rawSummary: inputs.rawSummary,
     shortSummary: inputs.shortSummary,
@@ -320,7 +320,7 @@ ${filename}: ${summary}
   await commenter.comment(`${summarizeComment}`, SUMMARIZE_TAG, 'replace')
 }
 
-const splitPatch = (patch: string | null | undefined): string[] => {
+const __splitPatch = (patch: string | null | undefined): string[] => {
   if (patch == null) {
     return []
   }
@@ -344,7 +344,7 @@ const splitPatch = (patch: string | null | undefined): string[] => {
   return result
 }
 
-const _checkIsValidInput = ({ inputs, commenter }: {
+const __checkIsValidInput = ({ inputs, commenter }: {
   inputs: Inputs;
   commenter: Commenter;
 }) => {
@@ -375,7 +375,7 @@ const _checkIsValidInput = ({ inputs, commenter }: {
   return true;
 }
 
-const getPreview = async({
+const __getPreview = async({
   commenter,
   pullRequest
 } : {
@@ -410,7 +410,7 @@ const getPreview = async({
 /**
  * 最後にレビューしたコミットIDを取得する
  */
-const getHighestReviewedCommitId = async ({
+const __getHighestReviewedCommitId = async ({
   commenter,
   existingCommitIdsBlock,
   pullRequest
@@ -450,7 +450,7 @@ const getHighestReviewedCommitId = async ({
  * @param files フィルタリングするファイル
  * @param options オプション
  */
-const _filterSelectedFiles = ({
+const __filterSelectedFiles = ({
   files,
   options
 } : {
@@ -475,7 +475,7 @@ const _filterSelectedFiles = ({
   }
 }
 
-const _retrieveFileContents = async ({
+const __retrieveFileContents = async ({
   file,
   pullRequest
 } : {
@@ -522,12 +522,12 @@ const _retrieveFileContents = async ({
   }
 
   const patches: Array<[number, number, string]> = []
-  for (const patch of splitPatch(file.patch)) {
-    const patchLines = patchStartEndLine(patch)
+  for (const patch of __splitPatch(file.patch)) {
+    const patchLines = __patchStartEndLine(patch)
     if (patchLines == null) {
       continue
     }
-    const hunks = parsePatch(patch)
+    const hunks = __parsePatch(patch)
     if (hunks == null) {
       continue
     }
@@ -560,7 +560,7 @@ ${hunks.oldHunk}
   }
 }
 
-const patchStartEndLine = (
+const __patchStartEndLine = (
   patch: string
 ): {
   oldHunk: {startLine: number; endLine: number}
@@ -588,10 +588,10 @@ const patchStartEndLine = (
   }
 }
 
-const parsePatch = (
+const __parsePatch = (
   patch: string
 ): {oldHunk: string; newHunk: string} | null => {
-  const hunkInfo = patchStartEndLine(patch)
+  const hunkInfo = __patchStartEndLine(patch)
   if (hunkInfo == null) {
     return null
   }
@@ -650,14 +650,14 @@ interface Review {
   comment: string
 }
 
-function parseReview(
+function __parseReview(
   response: string,
   patches: Array<[number, number, string]>,
   debug = false
 ): Review[] {
   const reviews: Review[] = []
 
-  response = _sanitizeResponse(response.trim())
+  response = __sanitizeResponse(response.trim())
 
   const lines = response.split('\n')
   const lineNumberRangeRegex = /(?:^|\s)(\d+)-(\d+):\s*$/
@@ -757,14 +757,14 @@ ${review.comment}`
   return reviews
 }
 
-const _sanitizeResponse = (comment: string): string => {
+const __sanitizeResponse = (comment: string): string => {
   // TODO: 何がしたいのか理解できない
-  comment = _sanitizeCodeBlock(comment, 'suggestion')
-  comment = _sanitizeCodeBlock(comment, 'diff')
+  comment = __sanitizeCodeBlock(comment, 'suggestion')
+  comment = __sanitizeCodeBlock(comment, 'diff')
   return comment
 }
 
-const _sanitizeCodeBlock = (comment: string, codeBlockLabel: string): string => {
+const __sanitizeCodeBlock = (comment: string, codeBlockLabel: string): string => {
   const codeBlockStart = `\`\`\`${codeBlockLabel}`
   const codeBlockEnd = '```'
   const lineNumberRegex = /^ *(\d+): /gm
@@ -805,7 +805,7 @@ const _sanitizeCodeBlock = (comment: string, codeBlockLabel: string): string => 
 /**
  * ファイルの変更内容を要約し、レビューが必要かどうかを判定する
  */
-const doSummary = async ({
+const __doSummary = async ({
   filename,
   fileDiff,
   options,
@@ -998,7 +998,7 @@ ${commentChain}
         return
       }
       // parse review
-      const reviews = parseReview(response, patches, options.debug)
+      const reviews = __parseReview(response, patches, options.debug)
       for (const review of reviews) {
         // check for LGTM
         if (
@@ -1037,7 +1037,7 @@ ${commentChain}
   }
 }
 
-const _generateSummarizeComment = ({
+const __generateSummarizeComment = ({
   summarizeFinalResponse,
   rawSummary,
   shortSummary,
