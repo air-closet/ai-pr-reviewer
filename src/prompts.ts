@@ -36,9 +36,6 @@ behavior of the code.
 - If the diff does not contain content that negatively affects the diff, e.g., typo corrections,
   formatting corrections, variable name corrections, etc., triage it as \`APPROVED\`.
 
-Please evaluate the diff thoroughly and take into account factors such as the number of 
-lines changed, the potential impact on the overall system, and the likelihood of 
-introducing new bugs or security vulnerabilities. 
 When in doubt, always err on the side of caution and triage the diff as \`NEEDS_REVIEW\`.
 
 You must strictly follow the format below for triaging the diff:
