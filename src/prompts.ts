@@ -33,8 +33,8 @@ behavior of the code.
 
 - If the diff has the potential to have a negative impact, such as a bug,
   worsening readability,security risk, or performance degradation, triage it as \`NEEDS_REVIEW\`.
-- If the diff only contains very minor changes that don't affect the code logic, such as 
-  fixing typos, formatting, or renaming variables for clarity, triage it as \`APPROVED\`.
+- If the diff does not contain content that negatively affects the diff, e.g., typo corrections,
+  formatting corrections, variable name corrections, etc., triage it as \`APPROVED\`.
 
 Please evaluate the diff thoroughly and take into account factors such as the number of 
 lines changed, the potential impact on the overall system, and the likelihood of 
