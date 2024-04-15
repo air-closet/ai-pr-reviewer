@@ -31,9 +31,8 @@ behavior of the code.
   triageFileDiff = `Below the summary, I would also like you to triage the diff as \`NEEDS_REVIEW\` or 
 \`APPROVED\` based on the following criteria:
 
-- If the diff involves any modifications to the logic or functionality, even if they 
-  seem minor, triage it as \`NEEDS_REVIEW\`. This includes changes to control structures, 
-  function calls, or variable assignments that might impact the behavior of the code.
+- If the diff has the potential to have a negative impact, such as a bug,
+  worsening readability,security risk, or performance degradation, triage it as \`NEEDS_REVIEW\`.
 - If the diff only contains very minor changes that don't affect the code logic, such as 
   fixing typos, formatting, or renaming variables for clarity, triage it as \`APPROVED\`.
 
