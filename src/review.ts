@@ -58,30 +58,34 @@ const SKIP_KEYWORDS = [
   '説明が必要です。'
 ]
 
-const VALID_EVENT_NAMES = [
-  'pull_request',
-  'pull_request_target',
-]
+const VALID_EVENT_NAMES = ['pull_request', 'pull_request_target']
 
 interface IPullRequest {
-  [key: string]: any;
-  number: number;
-  html_url?: string | undefined;
-  body?: string | undefined;
+  [key: string]: any
+  number: number
+  html_url?: string | undefined
+  body?: string | undefined
 }
 
 interface IFile {
-  sha: string;
-  filename: string;
-  status: "added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged";
-  additions: number;
-  deletions: number;
-  changes: number;
-  blob_url: string;
-  raw_url: string;
-  contents_url: string;
-  patch?: string | undefined;
-  previous_filename?: string | undefined;
+  sha: string
+  filename: string
+  status:
+    | 'added'
+    | 'removed'
+    | 'modified'
+    | 'renamed'
+    | 'copied'
+    | 'changed'
+    | 'unchanged'
+  additions: number
+  deletions: number
+  changes: number
+  blob_url: string
+  raw_url: string
+  contents_url: string
+  patch?: string | undefined
+  previous_filename?: string | undefined
 }
 
 /**
@@ -90,7 +94,7 @@ interface IFile {
  * @property {string} 1 - 要約
  * @property {boolean} 2 - レビューが必要かどうか
  */
-type TSummaryResult = [string, string, boolean];
+type TSummaryResult = [string, string, boolean]
 const SUMMARY_RESULT = {
   FILENAME: 0,
   SUMMARY: 1,
@@ -103,7 +107,7 @@ const SUMMARY_RESULT = {
  * @property {number} 1 - パッチの終了行
  * @property {string} 2 - パッチの内容
  */
-type TPatch = [number, number, string];
+type TPatch = [number, number, string]
 const PATCH = {
   START_LINE: 0,
   END_LINE: 1,
@@ -117,7 +121,7 @@ const PATCH = {
  * @property {string} 2 - ファイルの変更内容
  * @property {TPatch[]} 3 - パッチ
  */
-type TFilesAndChanges = [string, string, string, TPatch[]];
+type TFilesAndChanges = [string, string, string, TPatch[]]
 
 export const codeReview = async (
   lightBot: Bot,
@@ -131,18 +135,16 @@ export const codeReview = async (
   const githubConcurrencyLimit = pLimit(options.githubConcurrencyLimit)
   const inputs: Inputs = new Inputs()
 
-  const isValidInput = __checkIsValidInput({ inputs, commenter })
-  if (!isValidInput) return;
+  const isValidInput = __checkIsValidInput({inputs, commenter})
+  if (!isValidInput) return
   const pullRequest = context.payload.pull_request as IPullRequest
 
   // gpt-3.5-turboはシステム・メッセージに注意を払わないので、とりあえずinputsに追加する。
   // TODO: ちょっと何を言っているのかわからないので、後で確認
   inputs.systemMessage = options.systemMessage
-  const {
-    existingCommitIdsBlock,
-    rawSummary,
-    shortSummary
-  } = await __getPreview({ commenter, pullRequest });
+  const {existingCommitIdsBlock, rawSummary, shortSummary} = await __getPreview(
+    {commenter, pullRequest}
+  )
   inputs.rawSummary = rawSummary
   inputs.shortSummary = shortSummary
 
@@ -191,7 +193,7 @@ export const codeReview = async (
     return
   }
 
-  const { filterSelectedFiles } = __filterSelectedFiles({ files, options });
+  const {filterSelectedFiles} = __filterSelectedFiles({files, options})
 
   if (filterSelectedFiles.length === 0) {
     warning('Skipped: filterSelectedFiles is null')
@@ -209,13 +211,15 @@ export const codeReview = async (
   const filteredFiles: (TFilesAndChanges | null)[] = await Promise.all(
     filterSelectedFiles.map(file =>
       githubConcurrencyLimit(async () => {
-        return __retrieveFileContents({ file, pullRequest })
+        return __retrieveFileContents({file, pullRequest})
       })
     )
   )
 
   // 取得したファイルが空の場合は除外する
-  const filesAndChanges = filteredFiles.filter(file => file !== null) as TFilesAndChanges[]
+  const filesAndChanges = filteredFiles.filter(
+    file => file !== null
+  ) as TFilesAndChanges[]
 
   // レビューできるファイルがない場合はスキップする
   if (filesAndChanges.length === 0) {
@@ -230,7 +234,15 @@ export const codeReview = async (
     if (options.maxFiles <= 0 || summaryPromises.length < options.maxFiles) {
       summaryPromises.push(
         openaiConcurrencyLimit(
-          async () => await __doSummary({ filename, fileDiff, options, inputs, prompts, lightBot })
+          async () =>
+            await __doSummary({
+              filename,
+              fileDiff,
+              options,
+              inputs,
+              prompts,
+              lightBot
+            })
         )
       )
     } else {
@@ -238,7 +250,7 @@ export const codeReview = async (
     }
   }
 
-  const summaryResults = await Promise.all(summaryPromises);
+  const summaryResults = await Promise.all(summaryPromises)
   const summaries = summaryResults.filter(
     summary => summary !== null
   ) as TSummaryResult[]
@@ -287,10 +299,7 @@ ${filename}: ${summary}
       let message = '### Summary by CodeRabbit\n\n'
       message += releaseNotesResponse
       try {
-        await commenter.updateDescription(
-          pullRequest.number,
-          message
-        )
+        await commenter.updateDescription(pullRequest.number, message)
       } catch (e: any) {
         warning(`release notes: error from github: ${e.message as string}`)
       }
@@ -307,12 +316,12 @@ ${filename}: ${summary}
   let summarizeComment = __generateSummarizeComment({
     summarizeFinalResponse,
     rawSummary: inputs.rawSummary,
-    shortSummary: inputs.shortSummary,
+    shortSummary: inputs.shortSummary
   })
 
   if (!options.disableReview) {
     const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
-      return __checkIsNeedReview({ filename, summaries })
+      return __checkIsNeedReview({filename, summaries})
     })
 
     const reviewPromises = []
@@ -320,7 +329,16 @@ ${filename}: ${summary}
       if (options.maxFiles <= 0 || reviewPromises.length < options.maxFiles) {
         reviewPromises.push(
           openaiConcurrencyLimit(async () => {
-            await doReview({ filename, patches, inputs, prompts, heavyBot, options, pullRequest, commenter })
+            await doReview({
+              filename,
+              patches,
+              inputs,
+              prompts,
+              heavyBot,
+              options,
+              pullRequest,
+              commenter
+            })
           })
         )
       } else {
@@ -371,19 +389,22 @@ const __splitPatch = (patch: string | null | undefined): string[] => {
   return result
 }
 
-const __checkIsValidInput = ({ inputs, commenter }: {
-  inputs: Inputs;
-  commenter: Commenter;
+const __checkIsValidInput = ({
+  inputs,
+  commenter
+}: {
+  inputs: Inputs
+  commenter: Commenter
 }) => {
   if (!VALID_EVENT_NAMES.includes(context.eventName)) {
     warning(
       `Skipped: current event is ${context.eventName}, only support pull_request event`
     )
-    return false;
+    return false
   }
   if (context.payload.pull_request == null) {
     warning('Skipped: context.payload.pull_request is null')
-    return false;
+    return false
   }
 
   inputs.title = context.payload.pull_request.title
@@ -396,18 +417,18 @@ const __checkIsValidInput = ({ inputs, commenter }: {
   // 説明文にignore_keywordが含まれている場合はスキップする。
   if (inputs.description.includes(ignoreKeyword)) {
     info('Skipped: description contains ignore_keyword')
-    return false;
+    return false
   }
 
-  return true;
+  return true
 }
 
-const __getPreview = async({
+const __getPreview = async ({
   commenter,
   pullRequest
-} : {
-  commenter: Commenter;
-  pullRequest: IPullRequest;
+}: {
+  commenter: Commenter
+  pullRequest: IPullRequest
 }) => {
   // SUMMARIZE_TAGメッセージを取得する
   const existingSummarizeCmt = await commenter.findCommentWithTag(
@@ -424,7 +445,9 @@ const __getPreview = async({
   }
 
   const existingSummarizeCmtBody = existingSummarizeCmt.body
-  const existingCommitIdsBlock = commenter.getReviewedCommitIdsBlock(existingSummarizeCmtBody)
+  const existingCommitIdsBlock = commenter.getReviewedCommitIdsBlock(
+    existingSummarizeCmtBody
+  )
   const rawSummary = commenter.getRawSummary(existingSummarizeCmtBody)
   const shortSummary = commenter.getShortSummary(existingSummarizeCmtBody)
   return {
@@ -441,10 +464,10 @@ const __getHighestReviewedCommitId = async ({
   commenter,
   existingCommitIdsBlock,
   pullRequest
-} : {
-  commenter: Commenter;
-  existingCommitIdsBlock: string;
-  pullRequest: IPullRequest;
+}: {
+  commenter: Commenter
+  existingCommitIdsBlock: string
+  pullRequest: IPullRequest
 }) => {
   const allCommitIds = await commenter.getAllCommitIds()
   let highestReviewedCommitId = ''
@@ -459,18 +482,14 @@ const __getHighestReviewedCommitId = async ({
     highestReviewedCommitId === '' ||
     highestReviewedCommitId === pullRequest.head.sha
   ) {
-    info(
-      `Will review from the base commit: ${
-        pullRequest.base.sha as string
-      }`
-    )
+    info(`Will review from the base commit: ${pullRequest.base.sha as string}`)
     highestReviewedCommitId = pullRequest.base.sha
   } else {
     info(`Will review from commit: ${highestReviewedCommitId}`)
   }
 
   return highestReviewedCommitId
-};
+}
 
 /**
  * オプションに基づいてファイルをフィルタリングする
@@ -480,9 +499,9 @@ const __getHighestReviewedCommitId = async ({
 const __filterSelectedFiles = ({
   files,
   options
-} : {
-  files: IFile[];
-  options: Options;
+}: {
+  files: IFile[]
+  options: Options
 }) => {
   // フィルタリングされたファイルをスキップする
   const filterSelectedFiles = []
@@ -505,9 +524,9 @@ const __filterSelectedFiles = ({
 const __retrieveFileContents = async ({
   file,
   pullRequest
-} : {
-  file: IFile;
-  pullRequest: IPullRequest;
+}: {
+  file: IFile
+  pullRequest: IPullRequest
 }) => {
   let fileContent = ''
   if (pullRequest == null) {
@@ -524,14 +543,8 @@ const __retrieveFileContents = async ({
     })
     if (contents.data != null) {
       if (!Array.isArray(contents.data)) {
-        if (
-          contents.data.type === 'file' &&
-          contents.data.content != null
-        ) {
-          fileContent = Buffer.from(
-            contents.data.content,
-            'base64'
-          ).toString()
+        if (contents.data.type === 'file' && contents.data.content != null) {
+          fileContent = Buffer.from(contents.data.content, 'base64').toString()
         }
       }
     }
@@ -785,7 +798,10 @@ const __sanitizeResponse = (comment: string): string => {
   return comment
 }
 
-const __sanitizeCodeBlock = (comment: string, codeBlockLabel: string): string => {
+const __sanitizeCodeBlock = (
+  comment: string,
+  codeBlockLabel: string
+): string => {
   const codeBlockStart = `\`\`\`${codeBlockLabel}`
   const codeBlockEnd = '```'
   const lineNumberRegex = /^ *(\d+): /gm
@@ -833,13 +849,13 @@ const __doSummary = async ({
   inputs,
   prompts,
   lightBot
-} : {
-  filename: string;
-  fileDiff: string;
-  options: Options;
-  inputs: Inputs;
-  prompts: Prompts;
-  lightBot: Bot;
+}: {
+  filename: string
+  fileDiff: string
+  options: Options
+  inputs: Inputs
+  prompts: Prompts
+  lightBot: Bot
 }): Promise<TSummaryResult | null> => {
   info(`summarize: ${filename}`)
   const ins = inputs.clone()
@@ -905,16 +921,16 @@ const doReview = async ({
   heavyBot,
   options,
   pullRequest,
-  commenter,
-} : {
-  filename: string;
-  patches: Array<[number, number, string]>;
-  inputs: Inputs;
-  prompts: Prompts;
-  heavyBot: Bot;
-  options: Options;
-  pullRequest: IPullRequest;
-  commenter: Commenter;
+  commenter
+}: {
+  filename: string
+  patches: Array<[number, number, string]>
+  inputs: Inputs
+  prompts: Prompts
+  heavyBot: Bot
+  options: Options
+  pullRequest: IPullRequest
+  commenter: Commenter
 }): Promise<void> => {
   info(`reviewing ${filename}`)
   const reviewsFailed: string[] = []
@@ -980,10 +996,7 @@ const doReview = async ({
     }
     // comment_chainをこのリクエストに詰め込んでみる
     const commentChainTokens = getTokenCount(commentChain)
-    if (
-      tokens + commentChainTokens >
-      options.heavyTokenLimits.requestTokens
-    ) {
+    if (tokens + commentChainTokens > options.heavyTokenLimits.requestTokens) {
       commentChain = ''
     } else {
       tokens += commentChainTokens
@@ -1059,11 +1072,11 @@ ${commentChain}
 const __generateSummarizeComment = ({
   summarizeFinalResponse,
   rawSummary,
-  shortSummary,
-} : {
-  summarizeFinalResponse: string;
-  rawSummary: string;
-  shortSummary: string;
+  shortSummary
+}: {
+  summarizeFinalResponse: string
+  rawSummary: string
+  shortSummary: string
 }) => {
   return `${summarizeFinalResponse}
 ${RAW_SUMMARY_START_TAG}
@@ -1080,10 +1093,12 @@ ${SHORT_SUMMARY_END_TAG}
 const __checkIsNeedReview = ({
   filename,
   summaries
-} : {
-  filename: string;
-  summaries: TSummaryResult[];
+}: {
+  filename: string
+  summaries: TSummaryResult[]
 }) => {
-  const summary = summaries.find(([summaryFilename]) => summaryFilename === filename)
+  const summary = summaries.find(
+    ([summaryFilename]) => summaryFilename === filename
+  )
   return summary?.[SUMMARY_RESULT.NEEDS_REVIEW] ?? true
 }
