@@ -58,6 +58,71 @@ const SKIP_KEYWORDS = [
   '説明が必要です。'
 ]
 
+const VALID_EVENT_NAMES = ['pull_request', 'pull_request_target']
+
+interface IPullRequest {
+  [key: string]: any
+  number: number
+  html_url?: string | undefined
+  body?: string | undefined
+}
+
+interface IFile {
+  sha: string
+  filename: string
+  status:
+    | 'added'
+    | 'removed'
+    | 'modified'
+    | 'renamed'
+    | 'copied'
+    | 'changed'
+    | 'unchanged'
+  additions: number
+  deletions: number
+  changes: number
+  blob_url: string
+  raw_url: string
+  contents_url: string
+  patch?: string | undefined
+  previous_filename?: string | undefined
+}
+
+/**
+ * 要約の結果
+ * @property {string} 0 - ファイル名
+ * @property {string} 1 - 要約
+ * @property {boolean} 2 - レビューが必要かどうか
+ */
+type TSummaryResult = [string, string, boolean]
+const SUMMARY_RESULT = {
+  FILENAME: 0,
+  SUMMARY: 1,
+  NEEDS_REVIEW: 2
+} as const
+
+/**
+ * Githubから取得したパッチ
+ * @property {number} 0 - パッチの開始行
+ * @property {number} 1 - パッチの終了行
+ * @property {string} 2 - パッチの内容
+ */
+type TPatch = [number, number, string]
+const PATCH = {
+  START_LINE: 0,
+  END_LINE: 1,
+  CONTENT: 2
+} as const
+
+/**
+ * Githubのファイルと変更内容
+ * @property {string} 0 - ファイル名
+ * @property {string} 1 - ファイルコンテンツ
+ * @property {string} 2 - ファイルの変更内容
+ * @property {TPatch[]} 3 - パッチ
+ */
+type TFilesAndChanges = [string, string, string, TPatch[]]
+
 export const codeReview = async (
   lightBot: Bot,
   heavyBot: Bot,
@@ -68,95 +133,46 @@ export const codeReview = async (
 
   const openaiConcurrencyLimit = pLimit(options.openaiConcurrencyLimit)
   const githubConcurrencyLimit = pLimit(options.githubConcurrencyLimit)
-
-  if (
-    context.eventName !== 'pull_request' &&
-    context.eventName !== 'pull_request_target'
-  ) {
-    warning(
-      `Skipped: current event is ${context.eventName}, only support pull_request event`
-    )
-    return
-  }
-  if (context.payload.pull_request == null) {
-    warning('Skipped: context.payload.pull_request is null')
-    return
-  }
-
   const inputs: Inputs = new Inputs()
-  inputs.title = context.payload.pull_request.title
-  if (context.payload.pull_request.body != null) {
-    inputs.description = commenter.getDescription(
-      context.payload.pull_request.body
-    )
-  }
 
-  // if the description contains ignore_keyword, skip
-  if (inputs.description.includes(ignoreKeyword)) {
-    info('Skipped: description contains ignore_keyword')
-    return
-  }
+  const isValidInput = __checkIsValidInput({inputs, commenter})
+  if (!isValidInput) return
+  const pullRequest = context.payload.pull_request as IPullRequest
 
-  // as gpt-3.5-turbo isn't paying attention to system message, add to inputs for now
+  // gpt-3.5-turboはシステム・メッセージに注意を払わないので、とりあえずinputsに追加する。
+  // TODO: ちょっと何を言っているのかわからないので、後で確認
   inputs.systemMessage = options.systemMessage
-
-  // get SUMMARIZE_TAG message
-  const existingSummarizeCmt = await commenter.findCommentWithTag(
-    SUMMARIZE_TAG,
-    context.payload.pull_request.number
+  const {existingCommitIdsBlock, rawSummary, shortSummary} = await __getPreview(
+    {commenter, pullRequest}
   )
-  let existingCommitIdsBlock = ''
-  let existingSummarizeCmtBody = ''
-  if (existingSummarizeCmt != null) {
-    existingSummarizeCmtBody = existingSummarizeCmt.body
-    inputs.rawSummary = commenter.getRawSummary(existingSummarizeCmtBody)
-    inputs.shortSummary = commenter.getShortSummary(existingSummarizeCmtBody)
-    existingCommitIdsBlock = commenter.getReviewedCommitIdsBlock(
-      existingSummarizeCmtBody
-    )
-  }
+  inputs.rawSummary = rawSummary
+  inputs.shortSummary = shortSummary
 
-  const allCommitIds = await commenter.getAllCommitIds()
-  // find highest reviewed commit id
-  let highestReviewedCommitId = ''
-  if (existingCommitIdsBlock !== '') {
-    highestReviewedCommitId = commenter.getHighestReviewedCommitId(
-      allCommitIds,
-      commenter.getReviewedCommitIds(existingCommitIdsBlock)
-    )
-  }
+  const highestReviewedCommitId = await __getHighestReviewedCommitId({
+    commenter,
+    existingCommitIdsBlock,
+    pullRequest
+  })
 
-  if (
-    highestReviewedCommitId === '' ||
-    highestReviewedCommitId === context.payload.pull_request.head.sha
-  ) {
-    info(
-      `Will review from the base commit: ${
-        context.payload.pull_request.base.sha as string
-      }`
-    )
-    highestReviewedCommitId = context.payload.pull_request.base.sha
-  } else {
-    info(`Will review from commit: ${highestReviewedCommitId}`)
-  }
-
-  // Fetch the diff between the highest reviewed commit and the latest commit of the PR branch
+  // PR ブランチの最後にレビューしたコミットと最新コミットの diff を取得する
   const incrementalDiff = await octokit.repos.compareCommits({
     owner: repo.owner,
     repo: repo.repo,
     base: highestReviewedCommitId,
-    head: context.payload.pull_request.head.sha
+    head: pullRequest.head.sha
   })
 
-  // Fetch the diff between the target branch's base commit and the latest commit of the PR branch
+  // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff を取得する
   const targetBranchDiff = await octokit.repos.compareCommits({
     owner: repo.owner,
     repo: repo.repo,
-    base: context.payload.pull_request.base.sha,
-    head: context.payload.pull_request.head.sha
+    base: pullRequest.base.sha,
+    head: pullRequest.head.sha
   })
 
+  // PR ブランチの最後にレビューしたコミットと最新コミットの diff、つまりプッシュされた増分
   const incrementalFiles = incrementalDiff.data.files
+  // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff、つまり PR ブランチの変更内容
   const targetBranchFiles = targetBranchDiff.data.files
 
   if (incrementalFiles == null || targetBranchFiles == null) {
@@ -164,7 +180,8 @@ export const codeReview = async (
     return
   }
 
-  // Filter out any file that is changed compared to the incremental changes
+  // 増分の変更と比較して変更されたファイルをフィルタリングする。
+  // これにより、前回のレビュー以降に変更されたファイルのみが残る。
   const files = targetBranchFiles.filter(targetBranchFile =>
     incrementalFiles.some(
       incrementalFile => incrementalFile.filename === targetBranchFile.filename
@@ -176,17 +193,7 @@ export const codeReview = async (
     return
   }
 
-  // skip files if they are filtered out
-  const filterSelectedFiles = []
-  const filterIgnoredFiles = []
-  for (const file of files) {
-    if (!options.checkPath(file.filename)) {
-      info(`skip for excluded path: ${file.filename}`)
-      filterIgnoredFiles.push(file)
-    } else {
-      filterSelectedFiles.push(file)
-    }
-  }
+  const {filterSelectedFiles} = __filterSelectedFiles({files, options})
 
   if (filterSelectedFiles.length === 0) {
     warning('Skipped: filterSelectedFiles is null')
@@ -200,175 +207,42 @@ export const codeReview = async (
     return
   }
 
-  // find hunks to review
-  const filteredFiles: Array<
-    [string, string, string, Array<[number, number, string]>] | null
-  > = await Promise.all(
+  // レビューのため、hunksを取得する
+  const filteredFiles: (TFilesAndChanges | null)[] = await Promise.all(
     filterSelectedFiles.map(file =>
       githubConcurrencyLimit(async () => {
-        // retrieve file contents
-        let fileContent = ''
-        if (context.payload.pull_request == null) {
-          warning('Skipped: context.payload.pull_request is null')
-          return null
-        }
-        try {
-          const contents = await octokit.repos.getContent({
-            owner: repo.owner,
-            repo: repo.repo,
-            path: file.filename,
-            ref: context.payload.pull_request.base.sha
-          })
-          if (contents.data != null) {
-            if (!Array.isArray(contents.data)) {
-              if (
-                contents.data.type === 'file' &&
-                contents.data.content != null
-              ) {
-                fileContent = Buffer.from(
-                  contents.data.content,
-                  'base64'
-                ).toString()
-              }
-            }
-          }
-        } catch (e: any) {
-          warning(
-            `Failed to get file contents: ${
-              e as string
-            }. This is OK if it's a new file.`
-          )
-        }
-
-        let fileDiff = ''
-        if (file.patch != null) {
-          fileDiff = file.patch
-        }
-
-        const patches: Array<[number, number, string]> = []
-        for (const patch of splitPatch(file.patch)) {
-          const patchLines = patchStartEndLine(patch)
-          if (patchLines == null) {
-            continue
-          }
-          const hunks = parsePatch(patch)
-          if (hunks == null) {
-            continue
-          }
-          const hunksStr = `
----new_hunk---
-\`\`\`
-${hunks.newHunk}
-\`\`\`
-
----old_hunk---
-\`\`\`
-${hunks.oldHunk}
-\`\`\`
-`
-          patches.push([
-            patchLines.newHunk.startLine,
-            patchLines.newHunk.endLine,
-            hunksStr
-          ])
-        }
-        if (patches.length > 0) {
-          return [file.filename, fileContent, fileDiff, patches] as [
-            string,
-            string,
-            string,
-            Array<[number, number, string]>
-          ]
-        } else {
-          return null
-        }
+        return __retrieveFileContents({file, pullRequest})
       })
     )
   )
 
-  // Filter out any null results
-  const filesAndChanges = filteredFiles.filter(file => file !== null) as Array<
-    [string, string, string, Array<[number, number, string]>]
-  >
+  // 取得したファイルが空の場合は除外する
+  const filesAndChanges = filteredFiles.filter(
+    file => file !== null
+  ) as TFilesAndChanges[]
 
+  // レビューできるファイルがない場合はスキップする
   if (filesAndChanges.length === 0) {
     error('Skipped: no files to review')
     return
   }
 
-  const summariesFailed: string[] = []
-
-  const doSummary = async (
-    filename: string,
-    fileContent: string,
-    fileDiff: string
-  ): Promise<[string, string, boolean] | null> => {
-    info(`summarize: ${filename}`)
-    const ins = inputs.clone()
-    if (fileDiff.length === 0) {
-      warning(`summarize: file_diff is empty, skip ${filename}`)
-      summariesFailed.push(`${filename} (empty diff)`)
-      return null
-    }
-
-    ins.filename = filename
-    ins.fileDiff = fileDiff
-
-    // render prompt based on inputs so far
-    const summarizePrompt = prompts.renderSummarizeFileDiff(
-      ins,
-      options.reviewSimpleChanges
-    )
-    const tokens = getTokenCount(summarizePrompt)
-
-    if (tokens > options.lightTokenLimits.requestTokens) {
-      info(`summarize: diff tokens exceeds limit, skip ${filename}`)
-      summariesFailed.push(`${filename} (diff tokens exceeds limit)`)
-      return null
-    }
-
-    // summarize content
-    try {
-      const [summarizeResp] = await lightBot.chat(summarizePrompt, {})
-
-      if (summarizeResp === '') {
-        info('summarize: nothing obtained from openai')
-        summariesFailed.push(`${filename} (nothing obtained from openai)`)
-        return null
-      } else {
-        if (options.reviewSimpleChanges === false) {
-          // parse the comment to look for triage classification
-          // Format is : [TRIAGE]: <NEEDS_REVIEW or APPROVED>
-          // if the change needs review return true, else false
-          const triageRegex = /\[TRIAGE\]:\s*(NEEDS_REVIEW|APPROVED)/
-          const triageMatch = summarizeResp.match(triageRegex)
-
-          if (triageMatch != null) {
-            const triage = triageMatch[1]
-            const needsReview = triage === 'NEEDS_REVIEW'
-
-            // remove this line from the comment
-            const summary = summarizeResp.replace(triageRegex, '').trim()
-            info(`filename: ${filename}, triage: ${triage}`)
-            return [filename, summary, needsReview]
-          }
-        }
-        return [filename, summarizeResp, true]
-      }
-    } catch (e: any) {
-      warning(`summarize: error from openai: ${e as string}`)
-      summariesFailed.push(`${filename} (error from openai: ${e as string})})`)
-      return null
-    }
-  }
-
+  // ファイルの変更を要約し、レビューが必要かどうかを判定する
   const summaryPromises = []
   const skippedFiles = []
-  for (const [filename, fileContent, fileDiff] of filesAndChanges) {
+  for (const [filename, fileDiff] of filesAndChanges) {
     if (options.maxFiles <= 0 || summaryPromises.length < options.maxFiles) {
       summaryPromises.push(
         openaiConcurrencyLimit(
-          async () => await doSummary(filename, fileContent, fileDiff)
+          async () =>
+            await __doSummary({
+              filename,
+              fileDiff,
+              options,
+              inputs,
+              prompts,
+              lightBot
+            })
         )
       )
     } else {
@@ -376,22 +250,22 @@ ${hunks.oldHunk}
     }
   }
 
-  const summaries = (await Promise.all(summaryPromises)).filter(
+  const summaryResults = await Promise.all(summaryPromises)
+  const summaries = summaryResults.filter(
     summary => summary !== null
-  ) as Array<[string, string, boolean]>
+  ) as TSummaryResult[]
 
   if (summaries.length > 0) {
-    const batchSize = 10
-    // join summaries into one in the batches of batchSize
-    // and ask the bot to summarize the summaries
-    for (let i = 0; i < summaries.length; i += batchSize) {
-      const summariesBatch = summaries.slice(i, i + batchSize)
+    const BATCH_SIZE = 10
+    // サマリーをBATCH_SIZEのバッチにまとめ、ボットに要約を依頼する
+    for (let i = 0; i < summaries.length; i += BATCH_SIZE) {
+      const summariesBatch = summaries.slice(i, i + BATCH_SIZE)
       for (const [filename, summary] of summariesBatch) {
         inputs.rawSummary += `---
 ${filename}: ${summary}
 `
       }
-      // ask chatgpt to summarize the summaries
+      // chatgptに要約を依頼する
       const [summarizeResp] = await heavyBot.chat(
         prompts.renderSummarizeChangesets(inputs),
         {}
@@ -404,7 +278,7 @@ ${filename}: ${summary}
     }
   }
 
-  // final summary
+  // 最終版の要約
   const [summarizeFinalResponse] = await heavyBot.chat(
     prompts.renderSummarize(inputs),
     {}
@@ -414,7 +288,7 @@ ${filename}: ${summary}
   }
 
   if (options.disableReleaseNotes === false) {
-    // final release notes
+    // 最終版リリースノート
     const [releaseNotesResponse] = await heavyBot.chat(
       prompts.renderSummarizeReleaseNotes(inputs),
       {}
@@ -425,208 +299,46 @@ ${filename}: ${summary}
       let message = '### Summary by CodeRabbit\n\n'
       message += releaseNotesResponse
       try {
-        await commenter.updateDescription(
-          context.payload.pull_request.number,
-          message
-        )
+        await commenter.updateDescription(pullRequest.number, message)
       } catch (e: any) {
         warning(`release notes: error from github: ${e.message as string}`)
       }
     }
   }
 
-  // generate a short summary as well
+  // 短い要約も生成する
   const [summarizeShortResponse] = await heavyBot.chat(
     prompts.renderSummarizeShort(inputs),
     {}
   )
   inputs.shortSummary = summarizeShortResponse
 
-  let summarizeComment = `${summarizeFinalResponse}
-${RAW_SUMMARY_START_TAG}
-${inputs.rawSummary}
-${RAW_SUMMARY_END_TAG}
-${SHORT_SUMMARY_START_TAG}
-${inputs.shortSummary}
-${SHORT_SUMMARY_END_TAG}
-
----
-
-`
+  let summarizeComment = __generateSummarizeComment({
+    summarizeFinalResponse,
+    rawSummary: inputs.rawSummary,
+    shortSummary: inputs.shortSummary
+  })
 
   if (!options.disableReview) {
     const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
-      const needsReview =
-        summaries.find(
-          ([summaryFilename]) => summaryFilename === filename
-        )?.[2] ?? true
-      return needsReview
+      return __checkIsNeedReview({filename, summaries})
     })
 
-    const reviewsSkipped = filesAndChanges
-      .filter(
-        ([filename]) =>
-          !filesAndChangesReview.some(
-            ([reviewFilename]) => reviewFilename === filename
-          )
-      )
-      .map(([filename]) => filename)
-
-    // failed reviews array
-    const reviewsFailed: string[] = []
-    const doReview = async (
-      filename: string,
-      fileContent: string,
-      patches: Array<[number, number, string]>
-    ): Promise<void> => {
-      info(`reviewing ${filename}`)
-      // make a copy of inputs
-      const ins: Inputs = inputs.clone()
-      ins.filename = filename
-
-      // calculate tokens based on inputs so far
-      let tokens = getTokenCount(prompts.renderReviewFileDiff(ins))
-      // loop to calculate total patch tokens
-      let patchesToPack = 0
-      for (const [, , patch] of patches) {
-        const patchTokens = getTokenCount(patch)
-        if (tokens + patchTokens > options.heavyTokenLimits.requestTokens) {
-          info(
-            `only packing ${patchesToPack} / ${patches.length} patches, tokens: ${tokens} / ${options.heavyTokenLimits.requestTokens}`
-          )
-          break
-        }
-        tokens += patchTokens
-        patchesToPack += 1
-      }
-
-      let patchesPacked = 0
-      for (const [startLine, endLine, patch] of patches) {
-        if (context.payload.pull_request == null) {
-          warning('No pull request found, skipping.')
-          continue
-        }
-        // see if we can pack more patches into this request
-        if (patchesPacked >= patchesToPack) {
-          info(
-            `unable to pack more patches into this request, packed: ${patchesPacked}, total patches: ${patches.length}, skipping.`
-          )
-          if (options.debug) {
-            info(`prompt so far: ${prompts.renderReviewFileDiff(ins)}`)
-          }
-          break
-        }
-        patchesPacked += 1
-
-        let commentChain = ''
-        try {
-          const allChains = await commenter.getCommentChainsWithinRange(
-            context.payload.pull_request.number,
-            filename,
-            startLine,
-            endLine,
-            COMMENT_REPLY_TAG
-          )
-
-          if (allChains.length > 0) {
-            info(`Found comment chains: ${allChains} for ${filename}`)
-            commentChain = allChains
-          }
-        } catch (e: any) {
-          warning(
-            `Failed to get comments: ${e as string}, skipping. backtrace: ${
-              e.stack as string
-            }`
-          )
-        }
-        // try packing comment_chain into this request
-        const commentChainTokens = getTokenCount(commentChain)
-        if (
-          tokens + commentChainTokens >
-          options.heavyTokenLimits.requestTokens
-        ) {
-          commentChain = ''
-        } else {
-          tokens += commentChainTokens
-        }
-
-        ins.patches += `
-${patch}
-`
-        if (commentChain !== '') {
-          ins.patches += `
----comment_chains---
-\`\`\`
-${commentChain}
-\`\`\`
-`
-        }
-
-        ins.patches += `
----end_change_section---
-`
-      }
-
-      if (patchesPacked > 0) {
-        // perform review
-        try {
-          const [response] = await heavyBot.chat(
-            prompts.renderReviewFileDiff(ins),
-            {}
-          )
-          if (response === '') {
-            info('review: nothing obtained from openai')
-            reviewsFailed.push(`${filename} (no response)`)
-            return
-          }
-          // parse review
-          const reviews = parseReview(response, patches, options.debug)
-          for (const review of reviews) {
-            // check for LGTM
-            if (
-              !options.reviewCommentLGTM &&
-              // スキップ対象の文言が含まれていた場合はスキップする
-              SKIP_KEYWORDS.some(keyword => review.comment.includes(keyword))
-            ) {
-              // lgtmCount += 1
-              continue
-            }
-            if (context.payload.pull_request == null) {
-              warning('No pull request found, skipping.')
-              continue
-            }
-
-            try {
-              // reviewCount += 1
-              await commenter.bufferReviewComment(
-                filename,
-                review.startLine,
-                review.endLine,
-                `${review.comment}`
-              )
-            } catch (e: any) {
-              reviewsFailed.push(`${filename} comment failed (${e as string})`)
-            }
-          }
-        } catch (e: any) {
-          warning(
-            `Failed to review: ${e as string}, skipping. backtrace: ${
-              e.stack as string
-            }`
-          )
-          reviewsFailed.push(`${filename} (${e as string})`)
-        }
-      } else {
-        reviewsSkipped.push(`${filename} (diff too large)`)
-      }
-    }
-
     const reviewPromises = []
-    for (const [filename, fileContent, , patches] of filesAndChangesReview) {
+    for (const [filename, , , patches] of filesAndChangesReview) {
       if (options.maxFiles <= 0 || reviewPromises.length < options.maxFiles) {
         reviewPromises.push(
           openaiConcurrencyLimit(async () => {
-            await doReview(filename, fileContent, patches)
+            await doReview({
+              filename,
+              patches,
+              inputs,
+              prompts,
+              heavyBot,
+              options,
+              pullRequest,
+              commenter
+            })
           })
         )
       } else {
@@ -636,24 +348,24 @@ ${commentChain}
 
     await Promise.all(reviewPromises)
 
-    // add existing_comment_ids_block with latest head sha
+    // 既存のコメントIDブロックに最新のhead shaを追加する。
     summarizeComment += `\n${commenter.addReviewedCommitId(
       existingCommitIdsBlock,
-      context.payload.pull_request.head.sha
+      pullRequest.head.sha
     )}`
 
-    // post the review
+    // レビューを投稿する
     await commenter.submitReview(
-      context.payload.pull_request.number,
+      pullRequest.number,
       commits[commits.length - 1].sha
     )
   }
 
-  // post the final summary comment
+  // サマリーのコメントを投稿する
   await commenter.comment(`${summarizeComment}`, SUMMARIZE_TAG, 'replace')
 }
 
-const splitPatch = (patch: string | null | undefined): string[] => {
+const __splitPatch = (patch: string | null | undefined): string[] => {
   if (patch == null) {
     return []
   }
@@ -677,7 +389,213 @@ const splitPatch = (patch: string | null | undefined): string[] => {
   return result
 }
 
-const patchStartEndLine = (
+const __checkIsValidInput = ({
+  inputs,
+  commenter
+}: {
+  inputs: Inputs
+  commenter: Commenter
+}) => {
+  if (!VALID_EVENT_NAMES.includes(context.eventName)) {
+    warning(
+      `Skipped: current event is ${context.eventName}, only support pull_request event`
+    )
+    return false
+  }
+  if (context.payload.pull_request == null) {
+    warning('Skipped: context.payload.pull_request is null')
+    return false
+  }
+
+  inputs.title = context.payload.pull_request.title
+  if (context.payload.pull_request.body != null) {
+    inputs.description = commenter.getDescription(
+      context.payload.pull_request.body
+    )
+  }
+
+  // 説明文にignore_keywordが含まれている場合はスキップする。
+  if (inputs.description.includes(ignoreKeyword)) {
+    info('Skipped: description contains ignore_keyword')
+    return false
+  }
+
+  return true
+}
+
+const __getPreview = async ({
+  commenter,
+  pullRequest
+}: {
+  commenter: Commenter
+  pullRequest: IPullRequest
+}) => {
+  // SUMMARIZE_TAGメッセージを取得する
+  const existingSummarizeCmt = await commenter.findCommentWithTag(
+    SUMMARIZE_TAG,
+    pullRequest.number
+  )
+
+  if (existingSummarizeCmt == null) {
+    return {
+      existingCommitIdsBlock: '',
+      rawSummary: '',
+      shortSummary: ''
+    }
+  }
+
+  const existingSummarizeCmtBody = existingSummarizeCmt.body
+  const existingCommitIdsBlock = commenter.getReviewedCommitIdsBlock(
+    existingSummarizeCmtBody
+  )
+  const rawSummary = commenter.getRawSummary(existingSummarizeCmtBody)
+  const shortSummary = commenter.getShortSummary(existingSummarizeCmtBody)
+  return {
+    existingCommitIdsBlock,
+    rawSummary,
+    shortSummary
+  }
+}
+
+/**
+ * 最後にレビューしたコミットIDを取得する
+ */
+const __getHighestReviewedCommitId = async ({
+  commenter,
+  existingCommitIdsBlock,
+  pullRequest
+}: {
+  commenter: Commenter
+  existingCommitIdsBlock: string
+  pullRequest: IPullRequest
+}) => {
+  const allCommitIds = await commenter.getAllCommitIds()
+  let highestReviewedCommitId = ''
+  if (existingCommitIdsBlock !== '') {
+    highestReviewedCommitId = commenter.getHighestReviewedCommitId(
+      allCommitIds,
+      commenter.getReviewedCommitIds(existingCommitIdsBlock)
+    )
+  }
+
+  if (
+    highestReviewedCommitId === '' ||
+    highestReviewedCommitId === pullRequest.head.sha
+  ) {
+    info(`Will review from the base commit: ${pullRequest.base.sha as string}`)
+    highestReviewedCommitId = pullRequest.base.sha
+  } else {
+    info(`Will review from commit: ${highestReviewedCommitId}`)
+  }
+
+  return highestReviewedCommitId
+}
+
+/**
+ * オプションに基づいてファイルをフィルタリングする
+ * @param files フィルタリングするファイル
+ * @param options オプション
+ */
+const __filterSelectedFiles = ({
+  files,
+  options
+}: {
+  files: IFile[]
+  options: Options
+}) => {
+  // フィルタリングされたファイルをスキップする
+  const filterSelectedFiles = []
+  const filterIgnoredFiles = []
+  for (const file of files) {
+    if (!options.checkPath(file.filename)) {
+      info(`skip for excluded path: ${file.filename}`)
+      filterIgnoredFiles.push(file)
+    } else {
+      filterSelectedFiles.push(file)
+    }
+  }
+
+  return {
+    filterSelectedFiles,
+    filterIgnoredFiles
+  }
+}
+
+const __retrieveFileContents = async ({
+  file,
+  pullRequest
+}: {
+  file: IFile
+  pullRequest: IPullRequest
+}) => {
+  let fileContent = ''
+  if (pullRequest == null) {
+    warning('Skipped: context.payload.pull_request is null')
+    return null
+  }
+  try {
+    // ベースブランチのファイルコンテンツを取得する
+    const contents = await octokit.repos.getContent({
+      owner: repo.owner,
+      repo: repo.repo,
+      path: file.filename,
+      ref: pullRequest.base.sha
+    })
+    if (contents.data != null) {
+      if (!Array.isArray(contents.data)) {
+        if (contents.data.type === 'file' && contents.data.content != null) {
+          fileContent = Buffer.from(contents.data.content, 'base64').toString()
+        }
+      }
+    }
+  } catch (e: any) {
+    warning(
+      `Failed to get file contents: ${
+        e as string
+      }. This is OK if it's a new file.`
+    )
+  }
+
+  let fileDiff = ''
+  if (file.patch != null) {
+    fileDiff = file.patch
+  }
+
+  const patches: TPatch[] = []
+  for (const patch of __splitPatch(file.patch)) {
+    const patchLines = __patchStartEndLine(patch)
+    if (patchLines == null) {
+      continue
+    }
+    const hunks = __parsePatch(patch)
+    if (hunks == null) {
+      continue
+    }
+    const hunksStr = `
+---new_hunk---
+\`\`\`
+${hunks.newHunk}
+\`\`\`
+
+---old_hunk---
+\`\`\`
+${hunks.oldHunk}
+\`\`\`
+`
+    patches.push([
+      patchLines.newHunk.startLine,
+      patchLines.newHunk.endLine,
+      hunksStr
+    ])
+  }
+  if (patches.length > 0) {
+    return [file.filename, fileContent, fileDiff, patches] as TFilesAndChanges
+  } else {
+    return null
+  }
+}
+
+const __patchStartEndLine = (
   patch: string
 ): {
   oldHunk: {startLine: number; endLine: number}
@@ -705,10 +623,10 @@ const patchStartEndLine = (
   }
 }
 
-const parsePatch = (
+const __parsePatch = (
   patch: string
 ): {oldHunk: string; newHunk: string} | null => {
-  const hunkInfo = patchStartEndLine(patch)
+  const hunkInfo = __patchStartEndLine(patch)
   if (hunkInfo == null) {
     return null
   }
@@ -718,14 +636,14 @@ const parsePatch = (
 
   let newLine = hunkInfo.newHunk.startLine
 
-  const lines = patch.split('\n').slice(1) // Skip the @@ line
+  const lines = patch.split('\n').slice(1) // @@ の行をスキップする
 
-  // Remove the last line if it's empty
+  // 最後の行が空の場合は削除する
   if (lines[lines.length - 1] === '') {
     lines.pop()
   }
 
-  // Skip annotations for the first 3 and last 3 lines
+  // 最初の3行と最後の3行の注釈をスキップする。
   const skipStart = 3
   const skipEnd = 3
 
@@ -767,14 +685,14 @@ interface Review {
   comment: string
 }
 
-function parseReview(
+function __parseReview(
   response: string,
-  patches: Array<[number, number, string]>,
+  patches: TPatch[],
   debug = false
 ): Review[] {
   const reviews: Review[] = []
 
-  response = sanitizeResponse(response.trim())
+  response = __sanitizeResponse(response.trim())
 
   const lines = response.split('\n')
   const lineNumberRangeRegex = /(?:^|\s)(\d+)-(\d+):\s*$/
@@ -826,8 +744,8 @@ ${review.comment}`
           review.comment = `> Note: This review was outside of the patch, but no patch was found that overlapped with it. Original lines [${review.startLine}-${review.endLine}]
 
 ${review.comment}`
-          review.startLine = patches[0][0]
-          review.endLine = patches[0][1]
+          review.startLine = patches[0][PATCH.START_LINE]
+          review.endLine = patches[0][PATCH.END_LINE]
         }
       }
 
@@ -837,50 +755,6 @@ ${review.comment}`
         `Stored comment for line range ${currentStartLine}-${currentEndLine}: ${currentComment.trim()}`
       )
     }
-  }
-
-  function sanitizeCodeBlock(comment: string, codeBlockLabel: string): string {
-    const codeBlockStart = `\`\`\`${codeBlockLabel}`
-    const codeBlockEnd = '```'
-    const lineNumberRegex = /^ *(\d+): /gm
-
-    let codeBlockStartIndex = comment.indexOf(codeBlockStart)
-
-    while (codeBlockStartIndex !== -1) {
-      const codeBlockEndIndex = comment.indexOf(
-        codeBlockEnd,
-        codeBlockStartIndex + codeBlockStart.length
-      )
-
-      if (codeBlockEndIndex === -1) break
-
-      const codeBlock = comment.substring(
-        codeBlockStartIndex + codeBlockStart.length,
-        codeBlockEndIndex
-      )
-      const sanitizedBlock = codeBlock.replace(lineNumberRegex, '')
-
-      comment =
-        comment.slice(0, codeBlockStartIndex + codeBlockStart.length) +
-        sanitizedBlock +
-        comment.slice(codeBlockEndIndex)
-
-      codeBlockStartIndex = comment.indexOf(
-        codeBlockStart,
-        codeBlockStartIndex +
-          codeBlockStart.length +
-          sanitizedBlock.length +
-          codeBlockEnd.length
-      )
-    }
-
-    return comment
-  }
-
-  function sanitizeResponse(comment: string): string {
-    comment = sanitizeCodeBlock(comment, 'suggestion')
-    comment = sanitizeCodeBlock(comment, 'diff')
-    return comment
   }
 
   for (const line of lines) {
@@ -916,4 +790,315 @@ ${review.comment}`
   storeReview()
 
   return reviews
+}
+
+const __sanitizeResponse = (comment: string): string => {
+  comment = __sanitizeCodeBlock(comment, 'suggestion')
+  comment = __sanitizeCodeBlock(comment, 'diff')
+  return comment
+}
+
+const __sanitizeCodeBlock = (
+  comment: string,
+  codeBlockLabel: string
+): string => {
+  const codeBlockStart = `\`\`\`${codeBlockLabel}`
+  const codeBlockEnd = '```'
+  const lineNumberRegex = /^ *(\d+): /gm
+
+  let codeBlockStartIndex = comment.indexOf(codeBlockStart)
+
+  while (codeBlockStartIndex !== -1) {
+    const codeBlockEndIndex = comment.indexOf(
+      codeBlockEnd,
+      codeBlockStartIndex + codeBlockStart.length
+    )
+
+    if (codeBlockEndIndex === -1) break
+
+    const codeBlock = comment.substring(
+      codeBlockStartIndex + codeBlockStart.length,
+      codeBlockEndIndex
+    )
+    const sanitizedBlock = codeBlock.replace(lineNumberRegex, '')
+
+    comment =
+      comment.slice(0, codeBlockStartIndex + codeBlockStart.length) +
+      sanitizedBlock +
+      comment.slice(codeBlockEndIndex)
+
+    codeBlockStartIndex = comment.indexOf(
+      codeBlockStart,
+      codeBlockStartIndex +
+        codeBlockStart.length +
+        sanitizedBlock.length +
+        codeBlockEnd.length
+    )
+  }
+
+  return comment
+}
+
+/**
+ * ファイルの変更内容を要約し、レビューが必要かどうかを判定する
+ */
+const __doSummary = async ({
+  filename,
+  fileDiff,
+  options,
+  inputs,
+  prompts,
+  lightBot
+}: {
+  filename: string
+  fileDiff: string
+  options: Options
+  inputs: Inputs
+  prompts: Prompts
+  lightBot: Bot
+}): Promise<TSummaryResult | null> => {
+  info(`summarize: ${filename}`)
+  const ins = inputs.clone()
+  if (fileDiff.length === 0) {
+    warning(`summarize: file_diff is empty, skip ${filename}`)
+    return null
+  }
+
+  ins.filename = filename
+  ins.fileDiff = fileDiff
+
+  // インプットに基づいてプロンプトをレンダリングする
+  const summarizePrompt = prompts.renderSummarizeFileDiff(
+    ins,
+    options.reviewSimpleChanges
+  )
+  const tokens = getTokenCount(summarizePrompt)
+
+  if (tokens > options.lightTokenLimits.requestTokens) {
+    info(`summarize: diff tokens exceeds limit, skip ${filename}`)
+    return null
+  }
+
+  // コンテキストを要約する
+  try {
+    const [summarizeResp] = await lightBot.chat(summarizePrompt, {})
+
+    if (summarizeResp === '') {
+      info('summarize: nothing obtained from openai')
+      return null
+    }
+
+    if (options.reviewSimpleChanges === false) {
+      // 分類をトリアージするためにコメントを解析する
+      // フォーマットは: [TRIAGE]: <NEEDS_REVIEW or APPROVED>
+      // 変更がレビューを必要とする場合はtrue、それ以外はfalseを返す
+      const triageRegex = /\[TRIAGE\]:\s*(NEEDS_REVIEW|APPROVED)/
+      const triageMatch = summarizeResp.match(triageRegex)
+
+      // TODO: 厳密等価演算子でなくていいのか確認
+      if (triageMatch != null) {
+        const triage = triageMatch[1]
+        const needsReview = triage === 'NEEDS_REVIEW'
+
+        // トリアージを削除して要約をトリミングする
+        const summary = summarizeResp.replace(triageRegex, '').trim()
+        info(`filename: ${filename}, triage: ${triage}`)
+        return [filename, summary, needsReview]
+      }
+    }
+    return [filename, summarizeResp, true]
+  } catch (e: any) {
+    warning(`summarize: error from openai: ${e as string}`)
+    return null
+  }
+}
+
+const doReview = async ({
+  filename,
+  patches,
+  inputs,
+  prompts,
+  heavyBot,
+  options,
+  pullRequest,
+  commenter
+}: {
+  filename: string
+  patches: Array<[number, number, string]>
+  inputs: Inputs
+  prompts: Prompts
+  heavyBot: Bot
+  options: Options
+  pullRequest: IPullRequest
+  commenter: Commenter
+}): Promise<void> => {
+  info(`reviewing ${filename}`)
+  const reviewsFailed: string[] = []
+  // インプットのコピーを作成する
+  const ins: Inputs = inputs.clone()
+  ins.filename = filename
+
+  // これまでの入力に基づいてトークンを計算する
+  let tokens = getTokenCount(prompts.renderReviewFileDiff(ins))
+  // パッチトークンの合計を計算するループ
+  let patchesToPack = 0
+  for (const [, , patch] of patches) {
+    const patchTokens = getTokenCount(patch)
+    if (tokens + patchTokens > options.heavyTokenLimits.requestTokens) {
+      info(
+        `only packing ${patchesToPack} / ${patches.length} patches, tokens: ${tokens} / ${options.heavyTokenLimits.requestTokens}`
+      )
+      break
+    }
+    tokens += patchTokens
+    patchesToPack += 1
+  }
+
+  let patchesPacked = 0
+  for (const [startLine, endLine, patch] of patches) {
+    if (pullRequest == null) {
+      warning('No pull request found, skipping.')
+      continue
+    }
+    // このリクエストにもっと多くのパッチを詰め込めるかどうか見てみよう
+    // TODO: ちょっと何を言っているのかわからないので、後で確認
+    if (patchesPacked >= patchesToPack) {
+      info(
+        `unable to pack more patches into this request, packed: ${patchesPacked}, total patches: ${patches.length}, skipping.`
+      )
+      if (options.debug) {
+        info(`prompt so far: ${prompts.renderReviewFileDiff(ins)}`)
+      }
+      break
+    }
+    patchesPacked += 1
+
+    let commentChain = ''
+    try {
+      const allChains = await commenter.getCommentChainsWithinRange(
+        pullRequest.number,
+        filename,
+        startLine,
+        endLine,
+        COMMENT_REPLY_TAG
+      )
+
+      if (allChains.length > 0) {
+        info(`Found comment chains: ${allChains} for ${filename}`)
+        commentChain = allChains
+      }
+    } catch (e: any) {
+      warning(
+        `Failed to get comments: ${e as string}, skipping. backtrace: ${
+          e.stack as string
+        }`
+      )
+    }
+    // comment_chainをこのリクエストに詰め込んでみる
+    const commentChainTokens = getTokenCount(commentChain)
+    if (tokens + commentChainTokens > options.heavyTokenLimits.requestTokens) {
+      commentChain = ''
+    } else {
+      tokens += commentChainTokens
+    }
+
+    ins.patches += `
+${patch}
+`
+    if (commentChain !== '') {
+      ins.patches += `
+---comment_chains---
+\`\`\`
+${commentChain}
+\`\`\`
+`
+    }
+
+    ins.patches += `
+---end_change_section---
+`
+  }
+
+  if (patchesPacked > 0) {
+    // レビューを行う
+    try {
+      const [response] = await heavyBot.chat(
+        prompts.renderReviewFileDiff(ins),
+        {}
+      )
+      if (response === '') {
+        info('review: nothing obtained from openai')
+        reviewsFailed.push(`${filename} (no response)`)
+        return
+      }
+      // レビューを解析する
+      const reviews = __parseReview(response, patches, options.debug)
+      for (const review of reviews) {
+        // LGTMかどうか確認する
+        if (
+          !options.reviewCommentLGTM &&
+          // スキップ対象の文言が含まれていた場合はスキップする
+          SKIP_KEYWORDS.some(keyword => review.comment.includes(keyword))
+        ) {
+          continue
+        }
+        if (pullRequest == null) {
+          warning('No pull request found, skipping.')
+          continue
+        }
+
+        try {
+          await commenter.bufferReviewComment(
+            filename,
+            review.startLine,
+            review.endLine,
+            `${review.comment}`
+          )
+        } catch (e: any) {
+          reviewsFailed.push(`${filename} comment failed (${e as string})`)
+        }
+      }
+    } catch (e: any) {
+      warning(
+        `Failed to review: ${e as string}, skipping. backtrace: ${
+          e.stack as string
+        }`
+      )
+      reviewsFailed.push(`${filename} (${e as string})`)
+    }
+  }
+}
+
+const __generateSummarizeComment = ({
+  summarizeFinalResponse,
+  rawSummary,
+  shortSummary
+}: {
+  summarizeFinalResponse: string
+  rawSummary: string
+  shortSummary: string
+}) => {
+  return `${summarizeFinalResponse}
+${RAW_SUMMARY_START_TAG}
+${rawSummary}
+${RAW_SUMMARY_END_TAG}
+${SHORT_SUMMARY_START_TAG}
+${shortSummary}
+${SHORT_SUMMARY_END_TAG}
+
+---
+`
+}
+
+const __checkIsNeedReview = ({
+  filename,
+  summaries
+}: {
+  filename: string
+  summaries: TSummaryResult[]
+}) => {
+  const summary = summaries.find(
+    ([summaryFilename]) => summaryFilename === filename
+  )
+  return summary?.[SUMMARY_RESULT.NEEDS_REVIEW] ?? true
 }
