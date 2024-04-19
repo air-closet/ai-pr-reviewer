@@ -31,10 +31,8 @@ behavior of the code.
   triageFileDiff = `Below the summary, I would also like you to triage the diff as \`NEEDS_REVIEW\` or 
 \`APPROVED\` based on the following criteria:
 
-- Triage the differences as \`NEEDS_REVIEW\` only if they are certain to have adverse effects, such as bugs,
-  reduced readability, security risks, or performance degradation.
-- In all other cases, triage the differences as \`APPROVED\`. This includes cases where it is not possible to determine
-  whether there is an adverse effect solely on the basis of the submitted diff.
+- Triage the differences as \`NEEDS_REVIEW\` only if they are certain to have adverse effects, such as bugs, reduced readability, decrease in type safety, security risks, or performance degradation.
+- In all other cases, triage the differences as \`APPROVED\`. This includes cases where it is not possible to determine whether there is an adverse effect solely on the basis of the submitted diff.
 
 When in doubt, always avoid a incorrect review and triage the diff as \`APPROVED\`.
 
