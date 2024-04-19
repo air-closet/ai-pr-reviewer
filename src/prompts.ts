@@ -31,12 +31,10 @@ behavior of the code.
   triageFileDiff = `Below the summary, I would also like you to triage the diff as \`NEEDS_REVIEW\` or 
 \`APPROVED\` based on the following criteria:
 
-- If the diff has the potential to have a negative impact, such as a bug,
-  worsening readability,security risk, or performance degradation, triage it as \`NEEDS_REVIEW\`.
-- If the diff does not contain content that negatively affects the diff, e.g., typo corrections,
-  formatting corrections, variable name corrections, etc., triage it as \`APPROVED\`.
+- Triage the differences as \`NEEDS_REVIEW\` only if they are certain to have adverse effects, such as bugs, reduced readability, decrease in type safety, security risks, or performance degradation.
+- In all other cases, triage the differences as \`APPROVED\`. This includes cases where it is not possible to determine whether there is an adverse effect solely on the basis of the submitted diff.
 
-When in doubt, always err on the side of caution and triage the diff as \`NEEDS_REVIEW\`.
+When in doubt, always avoid a incorrect review and triage the diff as \`APPROVED\`.
 
 You must strictly follow the format below for triaging the diff:
 [TRIAGE]: <NEEDS_REVIEW or APPROVED>
