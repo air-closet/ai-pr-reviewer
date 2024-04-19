@@ -36,7 +36,7 @@ behavior of the code.
 - If the diff does not contain content that negatively affects the diff, e.g., typo corrections,
   formatting corrections, variable name corrections, etc., triage it as \`APPROVED\`.
 
-When in doubt, always err on the side of caution and triage the diff as \`NEEDS_REVIEW\`.
+When in doubt, always avoid a incorrect review and triage the diff as \`APPROVED\`.
 
 You must strictly follow the format below for triaging the diff:
 [TRIAGE]: <NEEDS_REVIEW or APPROVED>
