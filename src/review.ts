@@ -52,9 +52,10 @@ export const codeReview = async (
   const inputs: Inputs = new Inputs()
   inputs.title = context.payload.pull_request.title
   if (context.payload.pull_request.body != null) {
-    inputs.description = commenter.getDescription(
-      context.payload.pull_request.body
-    )
+    // FIXME: 2024/04 コスト削減のため、PRの説明を取得する処理をコメントアウトした
+    // inputs.description = commenter.getDescription(
+    //   context.payload.pull_request.body
+    // )
   }
 
   // if the description contains ignore_keyword, skip
