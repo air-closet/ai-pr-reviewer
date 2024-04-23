@@ -135,7 +135,7 @@ export const codeReview = async (
   const githubConcurrencyLimit = pLimit(options.githubConcurrencyLimit)
   const inputs: Inputs = new Inputs()
 
-  const isValidInput = __checkIsValidInput({inputs, commenter})
+  const isValidInput = __validateInputAndInjectPRMeta({inputs})
   if (!isValidInput) return
   const pullRequest = context.payload.pull_request as IPullRequest
 
@@ -389,13 +389,7 @@ const __splitPatch = (patch: string | null | undefined): string[] => {
   return result
 }
 
-const __checkIsValidInput = ({
-  inputs,
-  commenter
-}: {
-  inputs: Inputs
-  commenter: Commenter
-}) => {
+const __validateInputAndInjectPRMeta = ({inputs}: {inputs: Inputs}) => {
   if (!VALID_EVENT_NAMES.includes(context.eventName)) {
     warning(
       `Skipped: current event is ${context.eventName}, only support pull_request event`
@@ -409,9 +403,10 @@ const __checkIsValidInput = ({
 
   inputs.title = context.payload.pull_request.title
   if (context.payload.pull_request.body != null) {
-    inputs.description = commenter.getDescription(
-      context.payload.pull_request.body
-    )
+    // FIXME: 2024/04 コスト削減のため、PRの説明を取得する処理をコメントアウトした
+    // inputs.description = commenter.getDescription(
+    //   context.payload.pull_request.body
+    // )
   }
 
   // 説明文にignore_keywordが含まれている場合はスキップする。
