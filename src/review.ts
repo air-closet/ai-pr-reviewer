@@ -59,6 +59,7 @@ const SKIP_KEYWORDS = [
 ]
 
 const VALID_EVENT_NAMES = ['pull_request', 'pull_request_target']
+const INVALID_TITLE_KEYWORDS = ['DON\'T MERGE', 'don\'t merge']
 
 interface IPullRequest {
   [key: string]: any
@@ -402,6 +403,11 @@ const __validateInputAndInjectPRMeta = ({inputs}: {inputs: Inputs}) => {
   }
 
   inputs.title = context.payload.pull_request.title
+  if (INVALID_TITLE_KEYWORDS.some(keyword => inputs.title.includes(keyword))) {
+    info('Skipped: title contains invalid keywords')
+    return false
+  }
+
   if (context.payload.pull_request.body != null) {
     // FIXME: 2024/04 コスト削減のため、PRの説明を取得する処理をコメントアウトした
     // inputs.description = commenter.getDescription(
