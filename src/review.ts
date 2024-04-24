@@ -59,7 +59,7 @@ const SKIP_KEYWORDS = [
 ]
 
 const VALID_EVENT_NAMES = ['pull_request', 'pull_request_target']
-const INVALID_TITLE_KEYWORDS = ['DON\'T MERGE', 'don\'t merge']
+const INVALID_TITLE_KEYWORDS = ["DON'T MERGE", "don't merge"]
 
 interface IPullRequest {
   [key: string]: any
