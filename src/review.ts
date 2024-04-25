@@ -3,15 +3,7 @@ import {error, info, warning} from '@actions/core'
 import {context as github_context} from '@actions/github'
 import pLimit from 'p-limit'
 import {type Bot} from './bot'
-import {
-  Commenter,
-  COMMENT_REPLY_TAG,
-  RAW_SUMMARY_END_TAG,
-  RAW_SUMMARY_START_TAG,
-  SHORT_SUMMARY_END_TAG,
-  SHORT_SUMMARY_START_TAG,
-  SUMMARIZE_TAG
-} from './commenter'
+import {Commenter, COMMENT_REPLY_TAG, SUMMARIZE_TAG} from './commenter'
 import {Inputs} from './inputs'
 import {octokit} from './octokit'
 import {type Options} from './options'
@@ -143,12 +135,7 @@ export const codeReview = async (
   // gpt-3.5-turboはシステム・メッセージに注意を払わないので、とりあえずinputsに追加する。
   // TODO: ちょっと何を言っているのかわからないので、後で確認
   inputs.systemMessage = options.systemMessage
-  const {existingCommitIdsBlock, rawSummary, shortSummary} = await __getPreview(
-    {commenter, pullRequest}
-  )
-  inputs.rawSummary = rawSummary
-  inputs.shortSummary = shortSummary
-
+  const {existingCommitIdsBlock} = await __getPreview({commenter, pullRequest})
   const highestReviewedCommitId = await __getHighestReviewedCommitId({
     commenter,
     existingCommitIdsBlock,
@@ -256,70 +243,7 @@ export const codeReview = async (
     summary => summary !== null
   ) as TSummaryResult[]
 
-  if (summaries.length > 0) {
-    const BATCH_SIZE = 10
-    // サマリーをBATCH_SIZEのバッチにまとめ、ボットに要約を依頼する
-    for (let i = 0; i < summaries.length; i += BATCH_SIZE) {
-      const summariesBatch = summaries.slice(i, i + BATCH_SIZE)
-      for (const [filename, summary] of summariesBatch) {
-        inputs.rawSummary += `---
-${filename}: ${summary}
-`
-      }
-      // chatgptに要約を依頼する
-      const [summarizeResp] = await heavyBot.chat(
-        prompts.renderSummarizeChangesets(inputs),
-        {}
-      )
-      if (summarizeResp === '') {
-        warning('summarize: nothing obtained from openai')
-      } else {
-        inputs.rawSummary = summarizeResp
-      }
-    }
-  }
-
-  // 最終版の要約
-  const [summarizeFinalResponse] = await heavyBot.chat(
-    prompts.renderSummarize(inputs),
-    {}
-  )
-  if (summarizeFinalResponse === '') {
-    info('summarize: nothing obtained from openai')
-  }
-
-  if (options.disableReleaseNotes === false) {
-    // 最終版リリースノート
-    const [releaseNotesResponse] = await heavyBot.chat(
-      prompts.renderSummarizeReleaseNotes(inputs),
-      {}
-    )
-    if (releaseNotesResponse === '') {
-      info('release notes: nothing obtained from openai')
-    } else {
-      let message = '### Summary by CodeRabbit\n\n'
-      message += releaseNotesResponse
-      try {
-        await commenter.updateDescription(pullRequest.number, message)
-      } catch (e: any) {
-        warning(`release notes: error from github: ${e.message as string}`)
-      }
-    }
-  }
-
-  // 短い要約も生成する
-  const [summarizeShortResponse] = await heavyBot.chat(
-    prompts.renderSummarizeShort(inputs),
-    {}
-  )
-  inputs.shortSummary = summarizeShortResponse
-
-  let summarizeComment = __generateSummarizeComment({
-    summarizeFinalResponse,
-    rawSummary: inputs.rawSummary,
-    shortSummary: inputs.shortSummary
-  })
-
+  let summarizeComment = ''
   if (!options.disableReview) {
     const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
       return __checkIsNeedReview({filename, summaries})
@@ -925,7 +849,7 @@ const doReview = async ({
   commenter
 }: {
   filename: string
-  patches: Array<[number, number, string]>
+  patches: Array<TPatch>
   inputs: Inputs
   prompts: Prompts
   heavyBot: Bot
@@ -1068,27 +992,6 @@ ${commentChain}
       reviewsFailed.push(`${filename} (${e as string})`)
     }
   }
-}
-
-const __generateSummarizeComment = ({
-  summarizeFinalResponse,
-  rawSummary,
-  shortSummary
-}: {
-  summarizeFinalResponse: string
-  rawSummary: string
-  shortSummary: string
-}) => {
-  return `${summarizeFinalResponse}
-${RAW_SUMMARY_START_TAG}
-${rawSummary}
-${RAW_SUMMARY_END_TAG}
-${SHORT_SUMMARY_START_TAG}
-${shortSummary}
-${SHORT_SUMMARY_END_TAG}
-
----
-`
 }
 
 const __checkIsNeedReview = ({
