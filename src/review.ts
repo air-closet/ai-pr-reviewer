@@ -177,6 +177,12 @@ export const codeReview = async (
     )
   )
 
+  if (options.debug) {
+    for (const file of files) {
+      info(`file: ${file}`)
+    }
+  }
+
   if (files.length === 0) {
     warning('Skipped: files is null')
     return
