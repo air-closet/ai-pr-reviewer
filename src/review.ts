@@ -170,6 +170,7 @@ export const codeReview = async (
 
   // 増分の変更と比較して変更されたファイルをフィルタリングする。
   // これにより、前回のレビュー以降に変更されたファイルのみが残る。
+  // TODO: diff単位で評価しているわけではないため、変更箇所以外も再レビューしてしまう
   const files = targetBranchFiles.filter(targetBranchFile =>
     incrementalFiles.some(
       incrementalFile => incrementalFile.filename === targetBranchFile.filename
@@ -239,9 +240,15 @@ export const codeReview = async (
   }
 
   const summaryResults = await Promise.all(summaryPromises)
+
+  // ここでfilterされてなくなるはずだが、なぜかレビューされている。
   const summaries = summaryResults.filter(
     summary => summary !== null
   ) as TSummaryResult[]
+
+  if (options.debug) {
+    info(`summaries: ${summaries}`)
+  }
 
   let summarizeComment = ''
   if (!options.disableReview) {
