@@ -179,7 +179,9 @@ export const codeReview = async (
 
   if (options.debug) {
     for (const file of files) {
-      info(`file: ${file}`)
+      for (const [key, value] of Object.entries(file)) {
+        info(`file: ${key} - ${value}`)
+      }
     }
   }
 
