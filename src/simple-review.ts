@@ -124,40 +124,47 @@ export default class SimpleReview {
     const incrementalDiff = await octokit.repos.compareCommits({
       owner: this.repo.owner,
       repo: this.repo.repo,
-      base: highestReviewedCommitId,
+      base: highestReviewedCommitId || this.pullRequest.base.sha,
       head: this.pullRequest.head.sha
     })
 
-    // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff を取得する
-    const targetBranchDiff = await octokit.repos.compareCommits({
-      owner: this.repo.owner,
-      repo: this.repo.repo,
-      base: this.pullRequest.base.sha,
-      head: this.pullRequest.head.sha
-    })
+    // // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff を取得する
+    // const targetBranchDiff = await octokit.repos.compareCommits({
+    //   owner: this.repo.owner,
+    //   repo: this.repo.repo,
+    //   base: this.pullRequest.base.sha,
+    //   head: this.pullRequest.head.sha
+    // })
 
-    // PR ブランチの最後にレビューしたコミットと最新コミットの diff、つまりプッシュされた増分
-    const incrementalFiles = incrementalDiff.data.files
-    // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff、つまり PR ブランチの変更内容
-    const targetBranchFiles = targetBranchDiff.data.files
+    // // PR ブランチの最後にレビューしたコミットと最新コミットの diff、つまりプッシュされた増分
+    // const incrementalFiles = incrementalDiff.data.files
+    // // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff、つまり PR ブランチの変更内容
+    // const targetBranchFiles = targetBranchDiff.data.files
 
-    if (incrementalFiles == null || targetBranchFiles == null) {
+    // if (incrementalFiles == null || targetBranchFiles == null) {
+    //   warning('Skipped: files data is missing')
+    //   return
+    // }
+
+    // // FIXME: これはcommit単位になっていないので、不要な範囲をレビューしてしまう
+    // // 素直にincrementalFilesを使うのはダメなのか？incrementalDiff.data.files.patchにありそう
+    // const files = targetBranchFiles.filter(targetBranchFile =>
+    //   incrementalFiles.some(
+    //     incrementalFile =>
+    //       incrementalFile.filename === targetBranchFile.filename
+    //   )
+    // )
+
+    // if (files.length === 0) {
+    //   warning('Skipped: files is null')
+    //   return
+    // }
+
+    const files = incrementalDiff.data.files
+    if (files === null || files === undefined || files.length === 0) {
       warning('Skipped: files data is missing')
       return
     }
-
-    const files = targetBranchFiles.filter(targetBranchFile =>
-      incrementalFiles.some(
-        incrementalFile =>
-          incrementalFile.filename === targetBranchFile.filename
-      )
-    )
-
-    if (files.length === 0) {
-      warning('Skipped: files is null')
-      return
-    }
-
     const {filterSelectedFiles} = this.filterSelectedFiles({files})
 
     if (filterSelectedFiles.length === 0) {
