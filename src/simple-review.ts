@@ -412,6 +412,9 @@ export default class SimpleReview {
       ])
     }
     if (patches.length > 0) {
+      info(`filename: ${file.filename}
+fileContent: ${fileContent}
+fileDiff: ${fileDiff}`)
       return [file.filename, fileContent, fileDiff, patches] as TFilesAndChanges
     } else {
       return null
