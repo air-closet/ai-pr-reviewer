@@ -8,7 +8,6 @@ import {
 import {Bot} from './bot'
 import {OpenAIOptions, Options} from './options'
 import {Prompts} from './prompts'
-import {codeReview} from './review'
 import {handleReviewComment} from './review-comment'
 import SimpleReview from './simple-review'
 
