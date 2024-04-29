@@ -128,38 +128,6 @@ export default class SimpleReview {
       head: this.pullRequest.head.sha
     })
 
-    // // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff を取得する
-    // const targetBranchDiff = await octokit.repos.compareCommits({
-    //   owner: this.repo.owner,
-    //   repo: this.repo.repo,
-    //   base: this.pullRequest.base.sha,
-    //   head: this.pullRequest.head.sha
-    // })
-
-    // // PR ブランチの最後にレビューしたコミットと最新コミットの diff、つまりプッシュされた増分
-    // const incrementalFiles = incrementalDiff.data.files
-    // // ターゲットブランチのベースコミットと PR ブランチの最新コミットの diff、つまり PR ブランチの変更内容
-    // const targetBranchFiles = targetBranchDiff.data.files
-
-    // if (incrementalFiles == null || targetBranchFiles == null) {
-    //   warning('Skipped: files data is missing')
-    //   return
-    // }
-
-    // // FIXME: これはcommit単位になっていないので、不要な範囲をレビューしてしまう
-    // // 素直にincrementalFilesを使うのはダメなのか？incrementalDiff.data.files.patchにありそう
-    // const files = targetBranchFiles.filter(targetBranchFile =>
-    //   incrementalFiles.some(
-    //     incrementalFile =>
-    //       incrementalFile.filename === targetBranchFile.filename
-    //   )
-    // )
-
-    // if (files.length === 0) {
-    //   warning('Skipped: files is null')
-    //   return
-    // }
-
     const files = incrementalDiff.data.files
     if (files === null || files === undefined || files.length === 0) {
       warning('Skipped: files data is missing')
@@ -607,6 +575,7 @@ fileDiff: ${fileDiff}`)
       return
     }
 
+    // patch内でも複数のレビューがある場合があるため、全てのレビューを検証・反映する
     for (const review of reviewResult) {
       ins.review = review.comment
       const isReviewValid = await this.checkReviewValidity(ins)
