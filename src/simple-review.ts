@@ -556,6 +556,7 @@ fileDiff: ${fileDiff}`)
         try {
           await this.review({
             inputs,
+            fileName: filename,
             patch,
             commenter
           })
@@ -577,20 +578,23 @@ fileDiff: ${fileDiff}`)
   private review = async ({
     inputs,
     patch,
+    fileName,
     commenter
   }: {
     inputs: SimpleInputs
     patch: TPatch
+    fileName: string
     commenter: Commenter
   }) => {
     const ins: SimpleInputs = inputs.clone()
+    ins.filename = fileName
     ins.patch = patch[PATCH.CONTENT]
 
     const isNeedToReview = await this.checkIsNeedToReview(ins)
     info(
       `filename: ${ins.filename}\n
        startLine:${patch[PATCH.START_LINE]}\n
-       endLine"${PATCH.END_LINE}\n
+       endLine:${PATCH.END_LINE}\n
        isNeedToReview: ${isNeedToReview}`
     )
     if (!isNeedToReview) {
@@ -603,18 +607,21 @@ fileDiff: ${fileDiff}`)
       return
     }
 
-    const isReviewValid = await this.checkReviewValidity(ins)
-    info(`isReviewValid: ${isReviewValid}`)
-    if (!isReviewValid) {
-      return
-    }
+    for (const review of reviewResult) {
+      ins.review = review.comment
+      const isReviewValid = await this.checkReviewValidity(ins)
+      info(`isReviewValid: ${isReviewValid}`)
+      if (!isReviewValid) {
+        return
+      }
 
-    await this.reflectReviewResultToCommenter(commenter, {
-      fileName: ins.filename,
-      startLine: reviewResult.startLine,
-      endLine: reviewResult.endLine,
-      comment: reviewResult.comment
-    })
+      await this.reflectReviewResultToCommenter(commenter, {
+        fileName: ins.filename,
+        startLine: review.startLine,
+        endLine: review.endLine,
+        comment: review.comment
+      })
+    }
   }
 
   private checkIsNeedToReview = async (ins: SimpleInputs): Promise<boolean> => {
@@ -649,14 +656,14 @@ fileDiff: ${fileDiff}`)
   private executeReview = async (
     ins: SimpleInputs,
     patch: TPatch
-  ): Promise<Review | undefined> => {
+  ): Promise<Review[] | undefined> => {
     try {
       const [reviewResponse] = await this.heavyBot.chat(
         this.prompts.renderReviewPatchDiff(ins),
         {}
       )
       const reviews = this.parseReview(reviewResponse, [patch])
-      return reviews[0]
+      return reviews
     } catch (err: any) {
       warning(`Failed to review: ${err}, backtrace: ${err.stack}`)
       return undefined
