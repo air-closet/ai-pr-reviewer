@@ -177,14 +177,6 @@ export const codeReview = async (
     )
   )
 
-  if (options.debug) {
-    for (const file of files) {
-      for (const [key, value] of Object.entries(file)) {
-        info(`file: ${key} - ${value}`)
-      }
-    }
-  }
-
   if (files.length === 0) {
     warning('Skipped: files is null')
     return
@@ -253,10 +245,6 @@ export const codeReview = async (
   const summaries = summaryResults.filter(
     summary => summary !== null
   ) as TSummaryResult[]
-
-  if (options.debug) {
-    info(`summaries: ${summaries}`)
-  }
 
   let summarizeComment = ''
   if (!options.disableReview) {

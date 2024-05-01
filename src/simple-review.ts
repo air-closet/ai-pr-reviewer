@@ -387,9 +387,6 @@ export default class SimpleReview {
       ])
     }
     if (patches.length > 0) {
-      info(`filename: ${file.filename}
-fileContent: ${fileContent}
-fileDiff: ${fileDiff}`)
       return [file.filename, fileContent, fileDiff, patches] as TFilesAndChanges
     } else {
       return null
@@ -559,18 +556,11 @@ fileDiff: ${fileDiff}`)
     ins.patch = patch[PATCH.CONTENT]
 
     const isNeedToReview = await this.checkIsNeedToReview(ins)
-    info(
-      `filename: ${ins.filename}\n
-       startLine:${patch[PATCH.START_LINE]}\n
-       endLine:${PATCH.END_LINE}\n
-       isNeedToReview: ${isNeedToReview}`
-    )
     if (!isNeedToReview) {
       return
     }
 
     const reviewResult = await this.executeReview(ins, patch)
-    info(`reviewResult: ${reviewResult}`)
     if (!reviewResult) {
       return
     }
@@ -579,7 +569,6 @@ fileDiff: ${fileDiff}`)
     for (const review of reviewResult) {
       ins.review = review.comment
       const isReviewValid = await this.checkReviewValidity(ins)
-      info(`isReviewValid: ${isReviewValid}`)
       if (!isReviewValid) {
         return
       }
