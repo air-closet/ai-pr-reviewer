@@ -201,8 +201,11 @@ $patch
   checkReviewValidity = `I would like you to triage the code review comment as \`VALID\` or 
 \`INVALID\` based on the following criteria:
 
-- For a given Diff, triage as \`VALID\` only if the given comment accurately points out the problem.
-- In all other cases, it is triaged as \`INVALID\`.
+- For a given Diff, triage as \`VALID\` only if the given Comment accurately points out the problem.
+- In all other cases, it is triaged as \`INVALID\`. This includes the following cases.
+  - If the Comment calls into question the intent of the Diff (e.g., "Is that change intentional?").
+  - If the Comment does not clarify the issue of the Diff (e.g, Comments that miss the point or are abstract).
+  - If the Comment is a description of the Diff or praises the Diff (e.g,"LGTM!" or "This change is appropriate.").
 
 You must strictly follow the format below for triaging the diff:
 [TRIAGE]: <VALID or INVALID>
