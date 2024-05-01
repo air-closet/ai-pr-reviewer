@@ -173,7 +173,6 @@ export const handleReviewComment = async (
           options.heavyTokenLimits.requestTokens
         ) {
           tokens += shortSummaryTokens
-          inputs.shortSummary = shortSummary
         }
       }
 
