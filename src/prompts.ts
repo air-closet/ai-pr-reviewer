@@ -61,6 +61,7 @@ You must strictly follow the format below for triaging the diff:
 
 Important:
 - Do not provide any reasoning why you triaged the diff as \`NEEDS_REVIEW\` or \`APPROVED\`.
+- Note that the diff is fragmentary, and if you cannot read the information you need, please triage it as an \`APPROVED\` diff. For example, a variable that does not appear to be used in a diff may be used in another diff.
 
 ## Diff
 $patch
