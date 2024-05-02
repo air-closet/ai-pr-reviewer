@@ -48,18 +48,22 @@ Important:
   the summary. You must only use the triage status format above to indicate that.
 `
 
-  triagePatchDiff = `提供されたDiffを、以下の基準に従って \`APPROVED\` または \`DATA_DEFICIENCY\` または \`NEEDS_REVIEW\`  としてトリアージしてください。
+  triagePatchDiff = `## 前提
+あなたは、新人コードレビュアーのサポートを行っています。あなたはサポートのため、一般的なコーディングアンチパターンに違反しているコードだけを新人に渡す必要があります。
 
-- \`APPROVED\`: 提供されたDiffが、一般的なコーディングのアンチパターンに違反していない場合
-- \`DATA_DEFICIENCY\`: 提供されたDiffだけでは、コードの意図が理解できない場合
-- \`NEEDS_REVIEW\`: 提供されたDiffが、一般的なコーディングのアンチパターンに違反している場合
+## タスク
+提供されたDiffを、以下の基準に従って \`APPROVED\` または \`NEEDS_INFORMATION\` または \`NEEDS_REVIEW\`  としてトリアージしてください。
+
+- 提供されたDiffが、一般的なコーディングのアンチパターンに違反していない場合、\`APPROVED\` としてトリアージしてください
+- 提供されたDiffだけでは、コードレビューに必要な情報が不足している場合、\`NEEDS_INFORMATION\` としてトリアージしてください
+- 提供されたDiffが、一般的なコーディングのアンチパターンに違反している場合、\`NEEDS_REVIEW\` としてトリアージしてください
 
 Diffをトリアージする際、以下のフォーマットに厳密に従ってください:
-[TRIAGE]: <NEEDS_REVIEW or APPROVED or DATA_DEFICIENCY>
+[TRIAGE]: <NEEDS_REVIEW or APPROVED or NEEDS_INFORMATION>
 
 重要:
-- \`NEEDS_REVIEW\` もしくは \`APPROVED\` もしくは \`DATA_DEFICIENCY\` にトリアージする理由を提供しないでください。
-- もし疑問がある場合や、提供されたDiffが十分でない場合は、 \`DATA_DEFICIENCY\`としてトリアージしてください。
+- \`NEEDS_REVIEW\` もしくは \`APPROVED\` もしくは \`NEEDS_INFORMATION\` にトリアージする理由を提供しないでください。
+- もし疑問がある場合や、提供されたDiffが十分でない場合は、 \`NEEDS_INFORMATION\`としてトリアージしてください。
 
 ## Diff
 $patch
@@ -196,7 +200,11 @@ LGTM!
 $patch
 `
 
-  checkReviewValidity = `提供されたDiffおよび、それに対するコードレビューを、以下の基準に基づいて \`VALID\` もしくは \`INVALID\` としてトリアージしてください。
+  checkReviewValidity = `## 前提
+あなたは、新人コードレビュアーのサポートを行っています。新人がDiffに対して行ったコードレビューをトリアージする必要があります。
+
+## タスク
+提供されたDiffおよび、それに対するコードレビューを、以下の基準に基づいて \`VALID\` もしくは \`INVALID\` としてトリアージしてください。
 
 - \`VALID\`: コードレビューが、Diffの問題点を明確にし、その問題点を解決するための具体的な指示を含んでいる場合
 - \`INVALID\`: コードレビューが、Diffの問題点を明確にしていないか、その問題点を解決するための具体的な指示を含んでいない場合
