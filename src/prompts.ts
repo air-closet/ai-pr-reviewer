@@ -48,18 +48,18 @@ Important:
   the summary. You must only use the triage status format above to indicate that.
 `
 
-  triagePatchDiff = `I would also like you to triage the diff as \`NEEDS_REVIEW\` or \`APPROVED\` or \`DATA_DEFICIENCY\` based on the following criteria:
+  triagePatchDiff = `提供されたDiffを、以下の基準に従って \`APPROVED\` または \`DATA_DEFICIENCY\` または \`NEEDS_REVIEW\`  としてトリアージしてください。
 
-- Triage as \`NEEDS_REVIEW\` only if the provided Diff definitely contains a bug.
-- If the provided Diff is missing and you are not sure if there is a bug, triage it as \`DATA_DEFICIENCY\`.
-- If there is no problem with the provided Diff, triage as \`APPROVED\`.
+- \`APPROVED\`: 提供されたDiffが、一般的なコーディングのアンチパターンに違反していない場合
+- \`DATA_DEFICIENCY\`: 提供されたDiffだけでは、コードの意図が理解できない場合
+- \`NEEDS_REVIEW\`: 提供されたDiffが、一般的なコーディングのアンチパターンに違反している場合
 
-You must strictly follow the format below for triaging the diff:
+Diffをトリアージする際、以下のフォーマットに厳密に従ってください:
 [TRIAGE]: <NEEDS_REVIEW or APPROVED or DATA_DEFICIENCY>
 
-Important:
-- Do not provide any reasoning why you triaged the diff as \`NEEDS_REVIEW\` or \`APPROVED\` or \`DATA_DEFICIENCY\`.
-- When in doubt, always avoid a incorrect review and triage the diff as \`DATA_DEFICIENCY\`.
+重要:
+- \`NEEDS_REVIEW\` もしくは \`APPROVED\` もしくは \`DATA_DEFICIENCY\` にトリアージする理由を提供しないでください。
+- もし疑問がある場合や、提供されたDiffが十分でない場合は、 \`DATA_DEFICIENCY\`としてトリアージしてください。
 
 ## Diff
 $patch
@@ -196,27 +196,27 @@ LGTM!
 $patch
 `
 
-  checkReviewValidity = `I would like you to triage the code review comment as \`VALID\` or 
-\`INVALID\` based on the following criteria:
+  checkReviewValidity = `提供されたDiffおよび、それに対するコードレビューを、以下の基準に基づいて \`VALID\` もしくは \`INVALID\` としてトリアージしてください。
 
-- For a given Diff, triage as \`VALID\` only if the given Comment accurately points out the problem.
-- In all other cases, it is triaged as \`INVALID\`.
+- \`VALID\`: コードレビューが、Diffの問題点を明確にし、その問題点を解決するための具体的な指示を含んでいる場合
+- \`INVALID\`: コードレビューが、Diffの問題点を明確にしていないか、その問題点を解決するための具体的な指示を含んでいない場合
 
-Cases to be triaged as \`INVALID\`.
-- If the Comment calls into question the intent of the Diff (e.g., "この変更は意図的ですか?").
-- If the Comment does not clarify the issue of the Diff (e.g., Comments that miss the point or are abstract).
-- If the Comment is a description of the Diff or praises the Diff (e.g.,"LGTM!" or "この変更は適切です").
+重要: 以下のような場合は、必ず\`INVALID\`とトリアージしてください。
+- コードレビューが、Diffの背景や意図に対して質問している場合 (ex. "この変更は意図的ですか?")
+- コードレビューが、Diffの説明や賞賛をしている場合 (ex. "LGTM!" や "この変更は適切です")
+- コードレビューが、一般的なコーディングのアンチパターンを指摘していない場合 (ex. "このコードは使用されていないように見えます")
+- コードレビューが、Diffからだけでは読み取れない問題を指摘している場合 (ex. "この変更は、この関数が呼び出される箇所に影響を与える可能性があります")
 
-You must strictly follow the format below for triaging the diff:
+コードレビューをトリアージする際、以下のフォーマットに厳密に従ってください:
 [TRIAGE]: <VALID or INVALID>
 
 Important:
-- Do not provide any reasoning why you triaged the code review comment as \`VALID\` or \`INVALID\`.
+- \`VALID\` もしくは \`INVALID\` にトリアージする理由を提供しないでください。
 
 ## Diff
 $patch
 
-## Comment
+## コードレビュー
 $review
 `
 
