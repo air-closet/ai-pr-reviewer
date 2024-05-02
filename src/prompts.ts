@@ -267,6 +267,31 @@ $patch
 $review
 `
 
+  checkReviewValidityOnlyComment = `## 前提
+あなたは、新人コードレビュアーのサポートを行っています。新人が行ったコードレビューをトリアージする必要があります。
+
+## タスク
+提供されたコードレビューを、以下の基準に基づいて \`VALID\` もしくは \`INVALID\` としてトリアージしてください。
+
+- \`VALID\`: コードレビューが、問題点を明確にし、その問題点を解決するための具体的な指示を含んでいる場合
+- \`INVALID\`: コードレビューが、問題点を明確にしていないか、その問題点を解決するための具体的な指示を含んでいない場合
+
+以下のような場合は、必ず\`INVALID\`とトリアージしてください。
+- コードレビューが、変更の背景や意図に対して質問している場合 (ex. "この変更は意図的ですか?")
+- コードレビューが、変更説明や賞賛をしている場合 (ex. "LGTM!" や "この変更は適切です")
+- コードレビューが、一般的なコーディングのアンチパターンを指摘していない場合 (ex. "このコードは使用されていないように見えます")
+- コードレビューが、変更からだけでは読み取れない問題を指摘している場合 (ex. "この変更は、この関数が呼び出される箇所に影響を与える可能性があります")
+
+コードレビューをトリアージする際、以下のフォーマットに厳密に従ってください:
+[TRIAGE]: <VALID or INVALID>
+
+重要:
+- \`VALID\` もしくは \`INVALID\` にトリアージする理由を提供しないでください。
+
+## コードレビュー
+$review
+`
+
   comment = `A comment was made on a GitHub PR review for a 
 diff hunk on a file - \`$filename\`. I would like you to follow 
 the instructions in that comment. 
@@ -381,5 +406,9 @@ $comment
 
   renderCheckReviewValidity(inputs: SimpleInputs): string {
     return inputs.render(this.checkReviewValidity)
+  }
+
+  renderCheckReviewValidityOnlyComment(comment: string): string {
+    return this.checkReviewValidityOnlyComment.replace('$review', comment)
   }
 }

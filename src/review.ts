@@ -338,6 +338,7 @@ ${filename}: ${summary}
               patches,
               inputs,
               prompts,
+              lightBot,
               heavyBot,
               options,
               pullRequest,
@@ -922,6 +923,7 @@ const doReview = async ({
   patches,
   inputs,
   prompts,
+  lightBot,
   heavyBot,
   options,
   pullRequest,
@@ -931,6 +933,7 @@ const doReview = async ({
   patches: Array<TPatch>
   inputs: Inputs
   prompts: Prompts
+  lightBot: Bot
   heavyBot: Bot
   options: Options
   pullRequest: IPullRequest
@@ -1051,6 +1054,17 @@ ${commentChain}
           continue
         }
 
+        // コメントの妥当性を検証する
+        const isValidReview = await checkReviewValidity({
+          lightBot,
+          prompts,
+          review: review.comment
+        })
+        if (!isValidReview) {
+          warning(`Invalid review: ${review.comment}, skipping.`)
+          continue
+        }
+
         try {
           await commenter.bufferReviewComment(
             filename,
@@ -1104,4 +1118,34 @@ ${shortSummary}
 ${SHORT_SUMMARY_END_TAG}
 ---
 `
+}
+
+const checkReviewValidity = async ({
+  lightBot,
+  prompts,
+  review
+}: {
+  lightBot: Bot
+  prompts: Prompts
+  review: string
+}): Promise<boolean> => {
+  const [isValidResponse] = await lightBot.chat(
+    prompts.renderCheckReviewValidityOnlyComment(review),
+    {}
+  )
+  return parseCheckReviewValidityResponse(isValidResponse)
+}
+
+const parseCheckReviewValidityResponse = (response: string): boolean => {
+  if (!response) {
+    return false
+  }
+  const triageRegex = /\[TRIAGE\]:\s*(VALID|INVALID)/
+  const triageMatch = response.match(triageRegex)
+
+  if (!triageMatch) {
+    return false
+  }
+  const triage = triageMatch[1]
+  return triage === 'VALID'
 }
