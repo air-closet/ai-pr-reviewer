@@ -69,7 +69,7 @@ $patch
 
   reviewFileDiff = `## IMPORTANT Instructions
 
-Input: New hunks annotated with line numbers and old hunks (replaced code). Hunks represent incomplete code fragments. New hanks have been determined to have adverse effects, including bugs, reduced readability, type safety, and security risks.
+Input: New hunks annotated with line numbers and old hunks (replaced code). Hunks represent incomplete code fragments.
 Task: Review new hunks for substantive issues using provided context and respond with comments if necessary.
 Output: Review comments in markdown with exact line number ranges in new hunks. Start and end line numbers must be within the same hunk. For single-line comments, start=end line number. Must use example response format below.
 Use fenced code blocks using the relevant language identifier where applicable.
@@ -202,10 +202,12 @@ $patch
 \`INVALID\` based on the following criteria:
 
 - For a given Diff, triage as \`VALID\` only if the given Comment accurately points out the problem.
-- In all other cases, it is triaged as \`INVALID\`. This includes the following cases.
-  - If the Comment calls into question the intent of the Diff (e.g., "Is that change intentional?").
-  - If the Comment does not clarify the issue of the Diff (e.g, Comments that miss the point or are abstract).
-  - If the Comment is a description of the Diff or praises the Diff (e.g,"LGTM!" or "This change is appropriate.").
+- In all other cases, it is triaged as \`INVALID\`.
+
+Cases to be triaged as \`INVALID\`.
+- If the Comment calls into question the intent of the Diff (e.g., "この変更は意図的ですか?").
+- If the Comment does not clarify the issue of the Diff (e.g., Comments that miss the point or are abstract).
+- If the Comment is a description of the Diff or praises the Diff (e.g.,"LGTM!" or "この変更は適切です").
 
 You must strictly follow the format below for triaging the diff:
 [TRIAGE]: <VALID or INVALID>
