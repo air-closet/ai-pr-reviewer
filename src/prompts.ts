@@ -48,20 +48,18 @@ Important:
   the summary. You must only use the triage status format above to indicate that.
 `
 
-  triagePatchDiff = `I would also like you to triage the diff as \`NEEDS_REVIEW\` or 
-\`APPROVED\` based on the following criteria:
+  triagePatchDiff = `I would also like you to triage the diff as \`NEEDS_REVIEW\` or \`APPROVED\` or \`DATA_DEFICIENCY\` based on the following criteria:
 
-- Triage the differences as \`NEEDS_REVIEW\` only if they are certain to have adverse effects, such as bugs, reduced readability, decrease in type safety, security risks, or performance degradation.
-- In all other cases, triage the differences as \`APPROVED\`. This includes cases where it is not possible to determine whether there is an adverse effect solely on the basis of the submitted diff.
-
-When in doubt, always avoid a incorrect review and triage the diff as \`APPROVED\`.
+- Triage as \`NEEDS_REVIEW\` only if the provided Diff definitely contains a bug.
+- If the provided Diff is missing and you are not sure if there is a bug, triage it as \`DATA_DEFICIENCY\`.
+- If there is no problem with the provided Diff, triage as \`APPROVED\`.
 
 You must strictly follow the format below for triaging the diff:
-[TRIAGE]: <NEEDS_REVIEW or APPROVED>
+[TRIAGE]: <NEEDS_REVIEW or APPROVED or DATA_DEFICIENCY>
 
 Important:
-- Do not provide any reasoning why you triaged the diff as \`NEEDS_REVIEW\` or \`APPROVED\`.
-- Note that the diff is fragmentary, and if you cannot read the information you need, please triage it as an \`APPROVED\` diff. For example, a variable that does not appear to be used in a diff may be used in another diff.
+- Do not provide any reasoning why you triaged the diff as \`NEEDS_REVIEW\` or \`APPROVED\` or \`DATA_DEFICIENCY\`.
+- When in doubt, always avoid a incorrect review and triage the diff as \`DATA_DEFICIENCY\`.
 
 ## Diff
 $patch
