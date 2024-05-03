@@ -267,10 +267,7 @@ $patch
 $review
 `
 
-  checkReviewValidityOnlyComment = `## 前提
-あなたは、新人コードレビュアーのサポートを行っています。新人が行ったコードレビューをトリアージする必要があります。
-
-## タスク
+  checkReviewValidityOnlyComment = `## タスク
 提供されたコードレビューを、以下の基準に基づいて \`VALID\` もしくは \`INVALID\` としてトリアージしてください。
 
 - \`VALID\`: コードレビューが、問題点を明確にし、その問題点を解決するための具体的な指示を含んでいる場合
