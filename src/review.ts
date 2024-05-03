@@ -3,12 +3,21 @@ import {error, info, warning} from '@actions/core'
 import {context as github_context} from '@actions/github'
 import pLimit from 'p-limit'
 import {type Bot} from './bot'
-import {Commenter, COMMENT_REPLY_TAG, SUMMARIZE_TAG} from './commenter'
+import {
+  Commenter,
+  COMMENT_REPLY_TAG,
+  SUMMARIZE_TAG,
+  RAW_SUMMARY_START_TAG,
+  RAW_SUMMARY_END_TAG,
+  SHORT_SUMMARY_START_TAG,
+  SHORT_SUMMARY_END_TAG
+} from './commenter'
 import {Inputs} from './inputs'
 import {octokit} from './octokit'
 import {type Options} from './options'
 import {type Prompts} from './prompts'
 import {getTokenCount} from './tokenizer'
+import {WebhookPayload} from '@actions/github/lib/interfaces'
 
 // eslint-disable-next-line camelcase
 const context = github_context
@@ -53,13 +62,7 @@ const SKIP_KEYWORDS = [
 const VALID_EVENT_NAMES = ['pull_request', 'pull_request_target']
 const INVALID_TITLE_KEYWORDS = ["DON'T MERGE", "don't merge"]
 
-interface IPullRequest {
-  [key: string]: any
-  number: number
-  html_url?: string | undefined
-  body?: string | undefined
-}
-
+type IPullRequest = NonNullable<WebhookPayload['pull_request']>
 interface IFile {
   sha: string
   filename: string
@@ -135,7 +138,12 @@ export const codeReview = async (
   // gpt-3.5-turboはシステム・メッセージに注意を払わないので、とりあえずinputsに追加する。
   // TODO: ちょっと何を言っているのかわからないので、後で確認
   inputs.systemMessage = options.systemMessage
-  const {existingCommitIdsBlock} = await __getPreview({commenter, pullRequest})
+  const {existingCommitIdsBlock, rawSummary, shortSummary} = await __getPreview(
+    {commenter, pullRequest}
+  )
+  inputs.rawSummary = rawSummary
+  inputs.shortSummary = shortSummary
+
   const highestReviewedCommitId = await __getHighestReviewedCommitId({
     commenter,
     existingCommitIdsBlock,
@@ -168,14 +176,13 @@ export const codeReview = async (
     return
   }
 
-  // 増分の変更と比較して変更されたファイルをフィルタリングする。
-  // これにより、前回のレビュー以降に変更されたファイルのみが残る。
-  // TODO: diff単位で評価しているわけではないため、変更箇所以外も再レビューしてしまう
-  const files = targetBranchFiles.filter(targetBranchFile =>
-    incrementalFiles.some(
-      incrementalFile => incrementalFile.filename === targetBranchFile.filename
-    )
-  )
+  // incrementalFilesは途中でmaster/mainをpullした場合にその差分も含めてしまうので、
+  // targetBranchFiles (master/mainとheadの差分) に含まれるファイルのみを抽出する
+  const files = incrementalFiles.filter(incrementalFile => {
+    return targetBranchFiles.some(targetBranchFile => {
+      return targetBranchFile.filename === incrementalFile.filename
+    })
+  })
 
   if (files.length === 0) {
     warning('Skipped: files is null')
@@ -246,7 +253,70 @@ export const codeReview = async (
     summary => summary !== null
   ) as TSummaryResult[]
 
-  let summarizeComment = ''
+  if (summaries.length > 0) {
+    const BATCH_SIZE = 10
+    // サマリーをBATCH_SIZEのバッチにまとめ、ボットに要約を依頼する
+    for (let i = 0; i < summaries.length; i += BATCH_SIZE) {
+      const summariesBatch = summaries.slice(i, i + BATCH_SIZE)
+      for (const [filename, summary] of summariesBatch) {
+        inputs.rawSummary += `---
+${filename}: ${summary}
+`
+      }
+      // chatgptに要約を依頼する
+      const [summarizeResp] = await heavyBot.chat(
+        prompts.renderSummarizeChangesets(inputs),
+        {}
+      )
+      if (summarizeResp === '') {
+        warning('summarize: nothing obtained from openai')
+      } else {
+        inputs.rawSummary = summarizeResp
+      }
+    }
+  }
+
+  // 最終版の要約
+  const [summarizeFinalResponse] = await heavyBot.chat(
+    prompts.renderSummarize(inputs),
+    {}
+  )
+  if (summarizeFinalResponse === '') {
+    info('summarize: nothing obtained from openai')
+  }
+
+  if (options.disableReleaseNotes === false) {
+    // 最終版リリースノート
+    const [releaseNotesResponse] = await heavyBot.chat(
+      prompts.renderSummarizeReleaseNotes(inputs),
+      {}
+    )
+    if (releaseNotesResponse === '') {
+      info('release notes: nothing obtained from openai')
+    } else {
+      let message = '### Summary by CodeRabbit\n\n'
+      message += releaseNotesResponse
+      try {
+        await commenter.updateDescription(pullRequest.number, message)
+      } catch (e: any) {
+        warning(`release notes: error from github: ${e.message as string}`)
+      }
+    }
+  }
+
+  // 短い要約も生成する
+  const [summarizeShortResponse] = await heavyBot.chat(
+    prompts.renderSummarizeShort(inputs),
+    {}
+  )
+  inputs.shortSummary = summarizeShortResponse
+
+  let summarizeComment = __generateSummarizeComment({
+    summarizeFinalResponse,
+    rawSummary: inputs.rawSummary,
+    shortSummary: inputs.shortSummary
+  })
+
   if (!options.disableReview) {
     const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
       return __checkIsNeedReview({filename, summaries})
@@ -262,6 +332,7 @@ export const codeReview = async (
               patches,
               inputs,
               prompts,
+              lightBot,
               heavyBot,
               options,
               pullRequest,
@@ -846,6 +917,7 @@ const doReview = async ({
   patches,
   inputs,
   prompts,
+  lightBot,
   heavyBot,
   options,
   pullRequest,
@@ -855,6 +927,7 @@ const doReview = async ({
   patches: Array<TPatch>
   inputs: Inputs
   prompts: Prompts
+  lightBot: Bot
   heavyBot: Bot
   options: Options
   pullRequest: IPullRequest
@@ -975,6 +1048,17 @@ ${commentChain}
           continue
         }
 
+        // コメントの妥当性を検証する
+        const isValidReview = await checkReviewValidity({
+          lightBot,
+          prompts,
+          review: review.comment
+        })
+        if (!isValidReview) {
+          warning(`Invalid review: ${review.comment}, skipping.`)
+          continue
+        }
+
         try {
           await commenter.bufferReviewComment(
             filename,
@@ -1008,4 +1092,54 @@ const __checkIsNeedReview = ({
     ([summaryFilename]) => summaryFilename === filename
   )
   return summary?.[SUMMARY_RESULT.NEEDS_REVIEW] ?? true
+}
+
+const __generateSummarizeComment = ({
+  summarizeFinalResponse,
+  rawSummary,
+  shortSummary
+}: {
+  summarizeFinalResponse: string
+  rawSummary: string
+  shortSummary: string
+}) => {
+  return `${summarizeFinalResponse}
+${RAW_SUMMARY_START_TAG}
+${rawSummary}
+${RAW_SUMMARY_END_TAG}
+${SHORT_SUMMARY_START_TAG}
+${shortSummary}
+${SHORT_SUMMARY_END_TAG}
+---
+`
+}
+
+const checkReviewValidity = async ({
+  lightBot,
+  prompts,
+  review
+}: {
+  lightBot: Bot
+  prompts: Prompts
+  review: string
+}): Promise<boolean> => {
+  const [isValidResponse] = await lightBot.chat(
+    prompts.renderCheckReviewValidityOnlyComment(review),
+    {}
+  )
+  return parseCheckReviewValidityResponse(isValidResponse)
+}
+
+const parseCheckReviewValidityResponse = (response: string): boolean => {
+  if (!response) {
+    return false
+  }
+  const triageRegex = /\[TRIAGE\]:\s*(VALID|INVALID)/
+  const triageMatch = response.match(triageRegex)
+
+  if (!triageMatch) {
+    return false
+  }
+  const triage = triageMatch[1]
+  return triage === 'VALID'
 }

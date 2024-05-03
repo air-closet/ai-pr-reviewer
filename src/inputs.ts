@@ -2,6 +2,8 @@ export class Inputs {
   systemMessage: string
   title: string
   description: string
+  rawSummary: string
+  shortSummary: string
   filename: string
   fileContent: string
   fileDiff: string
@@ -14,6 +16,8 @@ export class Inputs {
     systemMessage = '',
     title = 'no title provided',
     description = 'no description provided',
+    rawSummary = '',
+    shortSummary = '',
     filename = '',
     fileContent = 'file contents cannot be provided',
     fileDiff = 'file diff cannot be provided',
@@ -25,6 +29,8 @@ export class Inputs {
     this.systemMessage = systemMessage
     this.title = title
     this.description = description
+    this.rawSummary = rawSummary
+    this.shortSummary = shortSummary
     this.filename = filename
     this.fileContent = fileContent
     this.fileDiff = fileDiff
@@ -39,6 +45,8 @@ export class Inputs {
       this.systemMessage,
       this.title,
       this.description,
+      this.rawSummary,
+      this.shortSummary,
       this.filename,
       this.fileContent,
       this.fileDiff,
@@ -61,6 +69,12 @@ export class Inputs {
     }
     if (this.description) {
       content = content.replace('$description', this.description)
+    }
+    if (this.rawSummary) {
+      content = content.replace('$raw_summary', this.rawSummary)
+    }
+    if (this.shortSummary) {
+      content = content.replace('$short_summary', this.shortSummary)
     }
     if (this.filename) {
       content = content.replace('$filename', this.filename)

@@ -9,7 +9,8 @@ import {Bot} from './bot'
 import {OpenAIOptions, Options} from './options'
 import {Prompts} from './prompts'
 import {handleReviewComment} from './review-comment'
-import SimpleReview from './simple-review'
+// import SimpleReview from './simple-review'
+import {codeReview} from './review'
 
 async function run(): Promise<void> {
   const options: Options = new Options(
@@ -74,14 +75,14 @@ async function run(): Promise<void> {
       process.env.GITHUB_EVENT_NAME === 'pull_request' ||
       process.env.GITHUB_EVENT_NAME === 'pull_request_target'
     ) {
-      // await codeReview(lightBot, heavyBot, options, prompts)
-      const codeReviewer = new SimpleReview({
-        lightBot,
-        heavyBot,
-        options,
-        prompts
-      })
-      await codeReviewer.run()
+      await codeReview(lightBot, heavyBot, options, prompts)
+      // const codeReviewer = new SimpleReview({
+      //   lightBot,
+      //   heavyBot,
+      //   options,
+      //   prompts
+      // })
+      // await codeReviewer.run()
     } else if (
       process.env.GITHUB_EVENT_NAME === 'pull_request_review_comment'
     ) {
