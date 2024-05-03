@@ -17,6 +17,7 @@ import {octokit} from './octokit'
 import {type Options} from './options'
 import {type Prompts} from './prompts'
 import {getTokenCount} from './tokenizer'
+import {WebhookPayload} from '@actions/github/lib/interfaces'
 
 // eslint-disable-next-line camelcase
 const context = github_context
@@ -61,13 +62,7 @@ const SKIP_KEYWORDS = [
 const VALID_EVENT_NAMES = ['pull_request', 'pull_request_target']
 const INVALID_TITLE_KEYWORDS = ["DON'T MERGE", "don't merge"]
 
-interface IPullRequest {
-  [key: string]: any
-  number: number
-  html_url?: string | undefined
-  body?: string | undefined
-}
-
+type IPullRequest = NonNullable<WebhookPayload['pull_request']>
 interface IFile {
   sha: string
   filename: string
@@ -181,14 +176,13 @@ export const codeReview = async (
     return
   }
 
-  // 増分の変更と比較して変更されたファイルをフィルタリングする。
-  // これにより、前回のレビュー以降に変更されたファイルのみが残る。
-  // TODO: diff単位で評価しているわけではないため、変更箇所以外も再レビューしてしまう
-  const files = targetBranchFiles.filter(targetBranchFile =>
-    incrementalFiles.some(
-      incrementalFile => incrementalFile.filename === targetBranchFile.filename
-    )
-  )
+  // incrementalFilesは途中でmaster/mainをpullした場合にその差分も含めてしまうので、
+  // targetBranchFiles (master/mainとheadの差分) に含まれるファイルのみを抽出する
+  const files = incrementalFiles.filter(incrementalFile => {
+    return targetBranchFiles.some(targetBranchFile => {
+      return targetBranchFile.filename === incrementalFile.filename
+    })
+  })
 
   if (files.length === 0) {
     warning('Skipped: files is null')
